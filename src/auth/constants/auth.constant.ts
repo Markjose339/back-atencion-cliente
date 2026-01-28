@@ -1,0 +1,12 @@
+export const AUTH_CONSTANTS = {
+  ACCESS_TOKEN_EXPIRY: '15m',
+  REFRESH_TOKEN_EXPIRY: '7d',
+  COOKIE_MAX_AGE: {
+    ACCESS: 15 * 60 * 1000,
+    REFRESH: 7 * 24 * 60 * 60 * 1000,
+  },
+  TOKEN_REFRESH_THRESHOLD: 90,
+  REFRESH_CLEANUP_DELAY: 1000,
+} as const;
+
+export type AuthConstants = typeof AUTH_CONSTANTS;
