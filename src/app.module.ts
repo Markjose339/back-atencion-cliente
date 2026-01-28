@@ -9,6 +9,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { ConfigModule } from '@nestjs/config';
+import { TicketsModule } from './tickets/tickets.module';
+import { ServiceWindowsModule } from './service_windows/service_windows.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { ConfigModule } from '@nestjs/config';
     UsersModule,
     RolesModule,
     PermissionsModule,
+    TicketsModule,
+    ServiceWindowsModule,
   ],
   controllers: [],
   providers: [

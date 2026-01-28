@@ -8,6 +8,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 import { userRoles } from './user-roles.entity';
+import { tickets } from '@/tickets/entities/ticket.entity';
 
 export const users = pgTable(
   'users',
@@ -36,4 +37,5 @@ export const users = pgTable(
 
 export const usersRelations = relations(users, ({ many }) => ({
   userRoles: many(userRoles),
+  operatorTicket: many(tickets),
 }));

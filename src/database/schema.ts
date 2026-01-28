@@ -4,6 +4,8 @@ import * as roleSchema from '@/roles/entities/role.entity';
 import * as rolePermissionsSchema from '@/roles/entities/role-permissions.entity';
 import * as userRolesSchema from '@/users/entities/user-roles.entity';
 import * as sessionsSchema from '@/auth/entities/session.entity';
+import * as ticketsSchema from '@/tickets/entities/ticket.entity';
+import * as serviceWindowsSchema from '@/service_windows/entities/service_window.entity';
 
 export const schema = {
   ...permissionSchema,
@@ -12,4 +14,6 @@ export const schema = {
   ...userRolesSchema,
   ...userSchema,
   ...sessionsSchema,
+  ...ticketsSchema,
+  ...serviceWindowsSchema,
 };
