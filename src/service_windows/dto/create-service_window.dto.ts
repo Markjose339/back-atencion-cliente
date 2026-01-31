@@ -9,4 +9,11 @@ export class CreateServiceWindowDto {
     value.toLowerCase().trim().replace(/\s+/g, ' '),
   )
   name: string;
+
+  @IsNotEmpty({ message: 'El codigo es obligatorio' })
+  @IsString({ message: 'El nombre debe ser una cadena de texto' })
+  @Transform(({ value }: { value: string }) =>
+    value.toUpperCase().trim().replace(/\s+/g, ' '),
+  )
+  code: string;
 }

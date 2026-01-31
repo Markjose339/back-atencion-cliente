@@ -10,9 +10,9 @@ import {
   pgEnum,
 } from 'drizzle-orm/pg-core';
 
-export const ticketTypeEnum = pgEnum('ticket_type', [
+export const TicketTypeEnum = pgEnum('ticket_type', [
   'REGULAR',
-  'PREFERENTIAL',
+  'PREFERENCIAL',
 ]);
 
 export const tickets = pgTable(
@@ -22,16 +22,15 @@ export const tickets = pgTable(
       .primaryKey()
       .$defaultFn(() => createId()),
     code: varchar('code', { length: 15 }).notNull(),
-    packageCode: varchar('package_code ', { length: 25 }).notNull(),
-    type: ticketTypeEnum('type').default('REGULAR').notNull(),
-    serviceWindowId: varchar('service_windows_id', { length: 24 }).references(
-      () => serviceWindows.id,
-    ),
+    packageCode: varchar('package_code', { length: 25 }).notNull(),
+    type: TicketTypeEnum('type').default('REGULAR').notNull(),
+
     attentionStartedAt: timestamp('attention_started_at'),
     attentionFinishedAt: timestamp('attention_finished_at'),
-    operatorId: varchar('operator_id', { length: 24 }).references(
-      () => users.id,
+    serviceWindowId: varchar('service_window_id', { length: 24 }).references(
+      () => serviceWindows.id,
     ),
+    userId: varchar('user_id', { length: 24 }).references(() => users.id),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -41,15 +40,17 @@ export const tickets = pgTable(
   },
   (t) => [
     index('tickets_code_idx').on(t.code),
+    index('tickets_package_code_idx').on(t.packageCode),
     index('tickets_attention_started_idx').on(t.attentionStartedAt),
     index('tickets_attention_finished_idx').on(t.attentionFinishedAt),
-    index('tickets_service_window_idx').on(t.serviceWindowId),
+    index('tickets_user_id_idx').on(t.userId),
+    index('tickets_service_window_id_idx').on(t.serviceWindowId),
   ],
 );
 
 export const ticketsRelations = relations(tickets, ({ one }) => ({
-  operator: one(users, {
-    fields: [tickets.operatorId],
+  user: one(users, {
+    fields: [tickets.userId],
     references: [users.id],
   }),
   serviceWindow: one(serviceWindows, {

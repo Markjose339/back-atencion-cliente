@@ -11,6 +11,8 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { ConfigModule } from '@nestjs/config';
 import { TicketsModule } from './tickets/tickets.module';
 import { ServiceWindowsModule } from './service_windows/service_windows.module';
+import { CustomerServiceModule } from './customer-service/customer-service.module';
+import { WsModule } from './ws/ws.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { ServiceWindowsModule } from './service_windows/service_windows.module';
     PermissionsModule,
     TicketsModule,
     ServiceWindowsModule,
+    CustomerServiceModule,
+    WsModule,
   ],
   controllers: [],
   providers: [

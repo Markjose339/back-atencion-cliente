@@ -15,23 +15,31 @@ import { PaginationService } from '@/pagination/pagination.service';
 
 @Injectable()
 export class ServiceWindowsService extends PaginationService {
+  private readonly serviceWindowsTable = schema.serviceWindows;
+  private readonly returningColumns = {
+    id: this.serviceWindowsTable.id,
+    name: this.serviceWindowsTable.name,
+    createdAt: this.serviceWindowsTable.createdAt,
+  };
+
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
   ) {
     super();
   }
+
   async create(createServiceWindowDto: CreateServiceWindowDto) {
-    await this.validatedServiceWindowName(createServiceWindowDto.name);
+    await Promise.all([
+      this.validateUniqueField('name', createServiceWindowDto.name),
+      this.validateUniqueField('code', createServiceWindowDto.code),
+    ]);
 
     const [serviceWindow] = await this.db
-      .insert(schema.serviceWindows)
+      .insert(this.serviceWindowsTable)
       .values(createServiceWindowDto)
-      .returning({
-        id: schema.serviceWindows.id,
-        name: schema.serviceWindows.name,
-        createdAt: schema.serviceWindows.createdAt,
-      });
+      .returning(this.returningColumns);
+
     return serviceWindow;
   }
 
@@ -42,8 +50,9 @@ export class ServiceWindowsService extends PaginationService {
 
     const where = search
       ? or(
-          ilike(schema.serviceWindows.id, `%${search}%`),
-          ilike(schema.serviceWindows.name, `%${search}%`),
+          ilike(this.serviceWindowsTable.id, `%${search}%`),
+          ilike(this.serviceWindowsTable.name, `%${search}%`),
+          ilike(this.serviceWindowsTable.code, `%${search}%`),
         )
       : undefined;
 
@@ -55,13 +64,14 @@ export class ServiceWindowsService extends PaginationService {
         columns: {
           id: true,
           name: true,
+          code: true,
           createdAt: true,
         },
         orderBy: (serviceWindows, { desc }) => desc(serviceWindows.createdAt),
       }),
       this.db
         .select({ value: count() })
-        .from(schema.serviceWindows)
+        .from(this.serviceWindowsTable)
         .where(where),
     ]);
 
@@ -81,21 +91,23 @@ export class ServiceWindowsService extends PaginationService {
 
     if (updateServiceWindowDto.name) {
       validations.push(
-        this.validatedServiceWindowName(updateServiceWindowDto.name, id),
+        this.validateUniqueField('name', updateServiceWindowDto.name, id),
+      );
+    }
+
+    if (updateServiceWindowDto.code) {
+      validations.push(
+        this.validateUniqueField('code', updateServiceWindowDto.code, id),
       );
     }
 
     await Promise.all(validations);
 
     const [serviceWindow] = await this.db
-      .update(schema.serviceWindows)
+      .update(this.serviceWindowsTable)
       .set(updateServiceWindowDto)
-      .where(eq(schema.serviceWindows.id, id))
-      .returning({
-        id: schema.serviceWindows.id,
-        name: schema.serviceWindows.name,
-        createdAt: schema.serviceWindows.createdAt,
-      });
+      .where(eq(this.serviceWindowsTable.id, id))
+      .returning(this.returningColumns);
 
     return serviceWindow;
   }
@@ -104,42 +116,46 @@ export class ServiceWindowsService extends PaginationService {
     await this.validatedServiceWindowId(id);
 
     const [serviceWindow] = await this.db
-      .delete(schema.serviceWindows)
-      .where(eq(schema.serviceWindows.id, id))
-      .returning({
-        id: schema.serviceWindows.id,
-        name: schema.serviceWindows.name,
-        createdAt: schema.serviceWindows.createdAt,
-      });
+      .delete(this.serviceWindowsTable)
+      .where(eq(this.serviceWindowsTable.id, id))
+      .returning(this.returningColumns);
+
     return serviceWindow;
   }
 
   async validatedServiceWindowId(id: string) {
     const serviceWindow = await this.db.query.serviceWindows.findFirst({
-      where: eq(schema.serviceWindows.id, id),
+      where: eq(this.serviceWindowsTable.id, id),
     });
 
-    if (!serviceWindow)
+    if (!serviceWindow) {
       throw new NotFoundException(`Ventanilla con el id ${id} no encontrado`);
+    }
 
     return serviceWindow;
   }
 
-  async validatedServiceWindowName(name: string, excludeId?: string) {
+  private async validateUniqueField(
+    field: 'name' | 'code',
+    value: string,
+    excludeId?: string,
+  ) {
     const where = excludeId
       ? and(
-          eq(schema.serviceWindows.name, name),
-          ne(schema.serviceWindows.id, excludeId),
+          eq(this.serviceWindowsTable[field], value),
+          ne(this.serviceWindowsTable.id, excludeId),
         )
-      : eq(schema.serviceWindows.name, name);
+      : eq(this.serviceWindowsTable[field], value);
 
-    const permission = await this.db.query.serviceWindows.findFirst({
+    const serviceWindow = await this.db.query.serviceWindows.findFirst({
       where,
     });
 
-    if (permission)
+    if (serviceWindow) {
+      const fieldName = field === 'name' ? 'nombre' : 'codigo';
       throw new ConflictException(
-        `Ventanilla con el nombre "${name}" ya existe`,
+        `Ventanilla con el ${fieldName} "${value}" ya existe`,
       );
+    }
   }
 }

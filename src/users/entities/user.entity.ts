@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { userRoles } from './user-roles.entity';
 import { tickets } from '@/tickets/entities/ticket.entity';
+import { serviceWindows } from '@/service_windows/entities/service_window.entity';
 
 export const users = pgTable(
   'users',
@@ -22,7 +23,9 @@ export const users = pgTable(
     address: varchar('address', { length: 255 }),
     phone: varchar('phone', { length: 15 }),
     isActive: boolean('is_active').notNull().default(true),
-
+    serviceWindowId: varchar('service_window_id', { length: 24 }).references(
+      () => serviceWindows.id,
+    ),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -32,10 +35,15 @@ export const users = pgTable(
   (t) => [
     index('users_email_idx').on(t.email),
     index('users_is_active_idx').on(t.isActive),
+    index('users_service_window_idx').on(t.serviceWindowId),
   ],
 );
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   userRoles: many(userRoles),
   operatorTicket: many(tickets),
+  serviceWindow: one(serviceWindows, {
+    fields: [users.serviceWindowId],
+    references: [serviceWindows.id],
+  }),
 }));

@@ -15,6 +15,7 @@ import { PaginationService } from '@/pagination/pagination.service';
 import { RolesService } from '@/roles/roles.service';
 import { and } from 'drizzle-orm';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
+import { ServiceWindowsService } from '@/service_windows/service_windows.service';
 
 @Injectable()
 export class UsersService extends PaginationService {
@@ -22,16 +23,26 @@ export class UsersService extends PaginationService {
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly rolesService: RolesService,
+    private readonly serviceWindowsService: ServiceWindowsService,
   ) {
     super();
   }
   async create(createUserDto: CreateUserDto) {
-    const { name, email, password, address, phone, isActive, roleIds } =
-      createUserDto;
+    const {
+      name,
+      email,
+      password,
+      address,
+      phone,
+      isActive,
+      serviceWindowId,
+      roleIds,
+    } = createUserDto;
 
     await Promise.all([
       this.validatedUserEmail(email),
       this.rolesService.validatedRoleIds(roleIds),
+      this.serviceWindowsService.validatedServiceWindowId(serviceWindowId),
     ]);
 
     const hashPassword = await this.hashPassword(password);
@@ -45,6 +56,7 @@ export class UsersService extends PaginationService {
           password: hashPassword,
           address,
           phone,
+          serviceWindowId,
           isActive,
         })
         .returning({
@@ -99,6 +111,12 @@ export class UsersService extends PaginationService {
               },
             },
           },
+          serviceWindow: {
+            columns: {
+              id: true,
+              name: true,
+            },
+          },
         },
         orderBy: (users, { desc }) => desc(users.createdAt),
       }),
@@ -112,6 +130,7 @@ export class UsersService extends PaginationService {
       address: user.address,
       phone: user.phone,
       isActive: user.isActive,
+      serviceWindow: user.serviceWindow,
       createdAt: user.createdAt,
       roles: user.userRoles.map((ur) => ur.role),
     }));
@@ -125,7 +144,8 @@ export class UsersService extends PaginationService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    const { email, password, roleIds, ...restData } = updateUserDto;
+    const { email, password, roleIds, serviceWindowId, ...restData } =
+      updateUserDto;
 
     const validations: Promise<void>[] = [
       this.validatedUserId(id).then(() => undefined),
@@ -139,6 +159,14 @@ export class UsersService extends PaginationService {
       validations.push(this.rolesService.validatedRoleIds(roleIds));
     }
 
+    if (serviceWindowId) {
+      validations.push(
+        this.serviceWindowsService
+          .validatedServiceWindowId(serviceWindowId)
+          .then(() => undefined),
+      );
+    }
+
     await Promise.all(validations);
 
     const updateData: Partial<UpdateUserDto> = { ...restData };
@@ -149,6 +177,9 @@ export class UsersService extends PaginationService {
 
     if (password) {
       updateData.password = await this.hashPassword(password);
+    }
+    if (serviceWindowId) {
+      updateData.serviceWindowId = serviceWindowId;
     }
 
     return this.db.transaction(async (tx) => {
