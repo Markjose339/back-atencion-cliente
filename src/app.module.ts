@@ -12,7 +12,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TicketsModule } from './tickets/tickets.module';
 import { ServiceWindowsModule } from './service_windows/service_windows.module';
 import { CustomerServiceModule } from './customer-service/customer-service.module';
-import { WsModule } from './ws/ws.module';
+import { WebsocketModule } from './websocket/websocket.module';
 
 @Module({
   imports: [
@@ -25,7 +25,7 @@ import { WsModule } from './ws/ws.module';
     TicketsModule,
     ServiceWindowsModule,
     CustomerServiceModule,
-    WsModule,
+    WebsocketModule,
   ],
   controllers: [],
   providers: [

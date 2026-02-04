@@ -4,6 +4,7 @@ import { and, eq, gte, lte, desc, sql } from 'drizzle-orm';
 import { DB_CONN } from '@/database/db.conn';
 import { schema } from '@/database/schema';
 import { CreateTicketDto } from './dto/create-ticket.dto';
+import { WebsocketGateway } from '@/websocket/websocket.gateway';
 
 @Injectable()
 export class TicketsService {
@@ -38,6 +39,7 @@ export class TicketsService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   async create(dto: CreateTicketDto) {
@@ -88,7 +90,13 @@ export class TicketsService {
           type: dto.type,
           serviceWindowId: serviceWindow.id,
         })
-        .returning();
+        .returning({
+          id: schema.tickets.id,
+          code: schema.tickets.code,
+          packageCode: schema.tickets.packageCode,
+        });
+
+      this.websocketGateway.server.to('tickets').emit('ticket:created', ticket);
 
       return ticket;
     });

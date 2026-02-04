@@ -4,8 +4,9 @@ import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { PaginationService } from '@/pagination/pagination.service';
 import { TicketsService } from '@/tickets/tickets.service';
 import { UsersService } from '@/users/users.service';
+import { WebsocketGateway } from '@/websocket/websocket.gateway';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, count, eq, ilike, isNull, or } from 'drizzle-orm';
+import { and, count, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class CustomerServiceService extends PaginationService {
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly ticketsService: TicketsService,
     private readonly usersService: UsersService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {
     super();
   }
@@ -90,8 +92,13 @@ export class CustomerServiceService extends PaginationService {
           type: true,
           attentionStartedAt: true,
           attentionFinishedAt: true,
+          createdAt: true,
         },
-        orderBy: (tickets, { asc }) => asc(tickets.createdAt),
+        orderBy: (tickets, { asc }) => [
+          sql`CASE WHEN ${tickets.type} = 'PREFERENCIAL' THEN 0 ELSE 1 END`,
+
+          asc(tickets.createdAt),
+        ],
       }),
       this.db.select({ value: count() }).from(schema.tickets).where(where),
     ]);
@@ -120,9 +127,25 @@ export class CustomerServiceService extends PaginationService {
       })
       .where(eq(schema.tickets.id, ticketId))
       .returning({
+        id: schema.tickets.id,
         code: schema.tickets.code,
+        serviceWindowId: schema.tickets.serviceWindowId,
       });
 
+    if (!ticket.serviceWindowId) {
+      throw new Error('El ticket no tiene ventanilla asignada');
+    }
+
+    const serviceWindow = await this.db.query.serviceWindows.findFirst({
+      where: eq(schema.serviceWindows.id, ticket.serviceWindowId),
+      columns: {
+        code: true,
+        name: true,
+      },
+    });
+    this.websocketGateway.server
+      .to('tickets')
+      .emit('ticket:started', serviceWindow);
     return {
       message: `Atención del ticket "${ticket.code}" iniciada correctamente`,
     };
@@ -140,11 +163,43 @@ export class CustomerServiceService extends PaginationService {
       })
       .where(eq(schema.tickets.id, ticketId))
       .returning({
+        id: schema.tickets.id,
         code: schema.tickets.code,
       });
 
     return {
       message: `Atención del ticket "${ticket.code}" finalizada correctamente`,
     };
+  }
+
+  async getAttendingTickets() {
+    const attendingTickets = await this.db.query.tickets.findMany({
+      where: and(
+        isNotNull(schema.tickets.attentionStartedAt),
+        isNull(schema.tickets.attentionFinishedAt),
+      ),
+      columns: {
+        id: true,
+        code: true,
+        serviceWindowId: true,
+        attentionStartedAt: true,
+      },
+      with: {
+        serviceWindow: {
+          columns: {
+            code: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: (tickets, { asc }) => asc(tickets.attentionStartedAt),
+    });
+
+    return attendingTickets.map((ticket) => ({
+      id: ticket.id,
+      code: ticket.code,
+      window: ticket.serviceWindow?.code || '',
+      windowName: ticket.serviceWindow?.name || '',
+    }));
   }
 }
