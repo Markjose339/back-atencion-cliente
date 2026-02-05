@@ -94,6 +94,7 @@ export class TicketsService {
           id: schema.tickets.id,
           code: schema.tickets.code,
           packageCode: schema.tickets.packageCode,
+          createdAt: schema.tickets.createdAt,
         });
 
       this.websocketGateway.server.to('tickets').emit('ticket:created', ticket);
