@@ -13,6 +13,7 @@ import { TicketsModule } from './tickets/tickets.module';
 import { ServiceWindowsModule } from './service_windows/service_windows.module';
 import { CustomerServiceModule } from './customer-service/customer-service.module';
 import { WebsocketModule } from './websocket/websocket.module';
+import { DepartmentsModule } from './departments/departments.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { WebsocketModule } from './websocket/websocket.module';
     ServiceWindowsModule,
     CustomerServiceModule,
     WebsocketModule,
+    DepartmentsModule,
   ],
   controllers: [],
   providers: [
