@@ -1,4 +1,6 @@
+import { branches } from '@/branches/entities/branch.entity';
 import { createId } from '@paralleldrive/cuid2';
+import { relations } from 'drizzle-orm';
 import { pgTable, varchar, timestamp, index } from 'drizzle-orm/pg-core';
 
 export const departments = pgTable(
@@ -7,6 +9,7 @@ export const departments = pgTable(
     id: varchar('id', { length: 24 })
       .primaryKey()
       .$defaultFn(() => createId()),
+
     name: varchar('name', { length: 25 }).unique().notNull(),
     code: varchar('code', { length: 10 }).unique().notNull(),
 
@@ -21,3 +24,7 @@ export const departments = pgTable(
     index('departments_code_idx').on(t.code),
   ],
 );
+
+export const departmentsRelations = relations(departments, ({ many }) => ({
+  branches: many(branches),
+}));

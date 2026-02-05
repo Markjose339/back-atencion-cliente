@@ -14,6 +14,7 @@ import { ServiceWindowsModule } from './service_windows/service_windows.module';
 import { CustomerServiceModule } from './customer-service/customer-service.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { DepartmentsModule } from './departments/departments.module';
+import { BranchesModule } from './branches/branches.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DepartmentsModule } from './departments/departments.module';
     CustomerServiceModule,
     WebsocketModule,
     DepartmentsModule,
+    BranchesModule,
   ],
   controllers: [],
   providers: [

@@ -115,7 +115,7 @@ export class DepartmentsService extends PaginationService {
     return department;
   }
 
-  private async validatedDepartmentId(id: string) {
+  async validatedDepartmentId(id: string) {
     const department = await this.db.query.departments.findFirst({
       where: eq(schema.departments.id, id),
     });
@@ -126,7 +126,7 @@ export class DepartmentsService extends PaginationService {
     return department;
   }
 
-  private async validatedDepartmentName(name: string, excludeId?: string) {
+  async validatedDepartmentName(name: string, excludeId?: string) {
     const where = excludeId
       ? and(
           eq(schema.departments.name, name),
