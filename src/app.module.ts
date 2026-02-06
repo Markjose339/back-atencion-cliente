@@ -15,6 +15,7 @@ import { CustomerServiceModule } from './customer-service/customer-service.modul
 import { WebsocketModule } from './websocket/websocket.module';
 import { DepartmentsModule } from './departments/departments.module';
 import { BranchesModule } from './branches/branches.module';
+import { ServicesModule } from './services/services.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { BranchesModule } from './branches/branches.module';
     WebsocketModule,
     DepartmentsModule,
     BranchesModule,
+    ServicesModule,
   ],
   controllers: [],
   providers: [
