@@ -1,7 +1,23 @@
-import { departments } from '@/departments/entities/department.entity';
 import { createId } from '@paralleldrive/cuid2';
-import { relations } from 'drizzle-orm';
-import { pgTable, varchar, timestamp, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  varchar,
+  timestamp,
+  index,
+  pgEnum,
+} from 'drizzle-orm/pg-core';
+
+export const boliviaDepartments = pgEnum('bolivia_departments', [
+  'La Paz',
+  'Cochabamba',
+  'Santa Cruz',
+  'Oruro',
+  'Potosí',
+  'Chuquisaca',
+  'Tarija',
+  'Beni',
+  'Pando',
+]);
 
 export const branches = pgTable(
   'branches',
@@ -12,12 +28,7 @@ export const branches = pgTable(
 
     name: varchar('name', { length: 50 }).unique().notNull(),
     address: varchar('address', { length: 255 }).notNull(),
-    departmentId: varchar('department_id', { length: 24 })
-      .notNull()
-      .references(() => departments.id, {
-        onDelete: 'restrict',
-        onUpdate: 'cascade',
-      }),
+    departmentName: boliviaDepartments('department_name').notNull(),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -27,13 +38,6 @@ export const branches = pgTable(
   },
   (t) => [
     index('branches_name_idx').on(t.name),
-    index('branches_department_id_idx').on(t.departmentId),
+    index('branches_department_name_idx').on(t.departmentName),
   ],
 );
-
-export const branchRelations = relations(branches, ({ one }) => ({
-  department: one(departments, {
-    fields: [branches.departmentId],
-    references: [departments.id],
-  }),
-}));

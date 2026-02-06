@@ -1,4 +1,6 @@
-import { IsNotEmpty, IsString, MaxLength, Length } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { BOLIVIA_DEPARTMENTS } from '@/branches/constants/bolivia-departments';
+import type { BoliviaDepartment } from '@/branches/constants/bolivia-departments';
 
 export class CreateBranchDto {
   @IsNotEmpty({ message: 'El nombre es obligatorio' })
@@ -15,6 +17,8 @@ export class CreateBranchDto {
 
   @IsNotEmpty({ message: 'El departamento es obligatorio' })
   @IsString({ message: 'El departamento debe ser una cadena de texto' })
-  @Length(24, 24, { message: 'El id del departamento no es válido' })
-  departmentId: string;
+  @IsIn(BOLIVIA_DEPARTMENTS, {
+    message: `Departamento inválido. Valores permitidos: ${BOLIVIA_DEPARTMENTS.join(', ')}`,
+  })
+  departmentName: BoliviaDepartment;
 }

@@ -12,7 +12,6 @@ import { ConfigModule } from '@nestjs/config';
 import { TicketsModule } from './tickets/tickets.module';
 import { CustomerServiceModule } from './customer-service/customer-service.module';
 import { WebsocketModule } from './websocket/websocket.module';
-import { DepartmentsModule } from './departments/departments.module';
 import { BranchesModule } from './branches/branches.module';
 import { ServicesModule } from './services/services.module';
 import { WindowsModule } from './windows/windows.module';
@@ -28,7 +27,6 @@ import { WindowsModule } from './windows/windows.module';
     TicketsModule,
     CustomerServiceModule,
     WebsocketModule,
-    DepartmentsModule,
     BranchesModule,
     ServicesModule,
     WindowsModule,

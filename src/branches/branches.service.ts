@@ -12,24 +12,17 @@ import { schema } from '@/database/schema';
 import { PaginationService } from '@/pagination/pagination.service';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { and, count, eq, ilike, ne, or } from 'drizzle-orm';
-import { DepartmentsService } from '@/departments/departments.service';
 
 @Injectable()
 export class BranchesService extends PaginationService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
-    private readonly departmentsService: DepartmentsService,
   ) {
     super();
   }
   async create(createBranchDto: CreateBranchDto) {
-    await Promise.all([
-      this.validateBranchName(createBranchDto.name),
-      this.departmentsService.validatedDepartmentId(
-        createBranchDto.departmentId,
-      ),
-    ]);
+    await this.validateBranchName(createBranchDto.name);
 
     const [branch] = await this.db
       .insert(schema.branches)
@@ -52,6 +45,7 @@ export class BranchesService extends PaginationService {
       ? or(
           ilike(schema.branches.id, `%${search}%`),
           ilike(schema.branches.name, `%${search}%`),
+          ilike(schema.branches.departmentName, `%${search}%`),
         )
       : undefined;
 
@@ -60,19 +54,11 @@ export class BranchesService extends PaginationService {
         where,
         limit,
         offset: skip,
-        with: {
-          department: {
-            columns: {
-              id: true,
-              name: true,
-              code: true,
-            },
-          },
-        },
         columns: {
           id: true,
           name: true,
           address: true,
+          departmentName: true,
           createdAt: true,
         },
         orderBy: (branches, { desc }) => desc(branches.createdAt),
@@ -96,14 +82,6 @@ export class BranchesService extends PaginationService {
 
     if (updateBranchDto.name) {
       validations.push(this.validateBranchName(updateBranchDto.name, id));
-    }
-
-    if (updateBranchDto.departmentId) {
-      validations.push(
-        this.departmentsService
-          .validatedDepartmentId(updateBranchDto.departmentId)
-          .then(() => undefined),
-      );
     }
 
     await Promise.all(validations);
@@ -139,9 +117,6 @@ export class BranchesService extends PaginationService {
   async validateBranchId(id: string) {
     const branch = await this.db.query.branches.findFirst({
       where: eq(schema.branches.id, id),
-      with: {
-        department: true,
-      },
     });
 
     if (!branch)
