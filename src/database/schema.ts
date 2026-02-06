@@ -5,10 +5,10 @@ import * as rolePermissionsSchema from '@/roles/entities/role-permissions.entity
 import * as userRolesSchema from '@/users/entities/user-roles.entity';
 import * as sessionsSchema from '@/auth/entities/session.entity';
 import * as ticketsSchema from '@/tickets/entities/ticket.entity';
-import * as serviceWindowsSchema from '@/service_windows/entities/service_window.entity';
 import * as departmentsSchema from '@/departments/entities/department.entity';
 import * as branchesSchema from '@/branches/entities/branch.entity';
 import * as servicesSchema from '@/services/entities/service.entity';
+import * as windowsSchema from '@/windows/entities/window.entity';
 
 export const schema = {
   ...permissionSchema,
@@ -18,8 +18,8 @@ export const schema = {
   ...userSchema,
   ...sessionsSchema,
   ...ticketsSchema,
-  ...serviceWindowsSchema,
   ...departmentsSchema,
   ...branchesSchema,
   ...servicesSchema,
+  ...windowsSchema,
 };

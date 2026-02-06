@@ -10,12 +10,12 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { ConfigModule } from '@nestjs/config';
 import { TicketsModule } from './tickets/tickets.module';
-import { ServiceWindowsModule } from './service_windows/service_windows.module';
 import { CustomerServiceModule } from './customer-service/customer-service.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { DepartmentsModule } from './departments/departments.module';
 import { BranchesModule } from './branches/branches.module';
 import { ServicesModule } from './services/services.module';
+import { WindowsModule } from './windows/windows.module';
 
 @Module({
   imports: [
@@ -26,12 +26,12 @@ import { ServicesModule } from './services/services.module';
     RolesModule,
     PermissionsModule,
     TicketsModule,
-    ServiceWindowsModule,
     CustomerServiceModule,
     WebsocketModule,
     DepartmentsModule,
     BranchesModule,
     ServicesModule,
+    WindowsModule,
   ],
   controllers: [],
   providers: [

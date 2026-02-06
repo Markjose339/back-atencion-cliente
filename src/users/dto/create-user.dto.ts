@@ -65,14 +65,6 @@ export class CreateUserDto {
   @IsNotEmpty({ message: 'El estado activo es obligatorio' })
   isActive: boolean;
 
-  @IsString({ message: 'El id de la ventanilla debe ser un texto' })
-  @IsNotEmpty({ message: 'La ventanilla es obligatoria' })
-  @MaxLength(24, {
-    message:
-      'El identificador de la ventanilla no debe exceder los 24 caracteres',
-  })
-  serviceWindowId: string;
-
   @IsArray({ message: 'Los roles deben proporcionarse como un arreglo' })
   @IsString({
     each: true,

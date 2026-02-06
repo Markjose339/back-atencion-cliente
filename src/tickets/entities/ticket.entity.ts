@@ -1,4 +1,3 @@
-import { serviceWindows } from '@/service_windows/entities/service_window.entity';
 import { users } from '@/users/entities/user.entity';
 import { createId } from '@paralleldrive/cuid2';
 import { relations } from 'drizzle-orm';
@@ -27,9 +26,6 @@ export const tickets = pgTable(
 
     attentionStartedAt: timestamp('attention_started_at'),
     attentionFinishedAt: timestamp('attention_finished_at'),
-    serviceWindowId: varchar('service_window_id', { length: 24 }).references(
-      () => serviceWindows.id,
-    ),
     userId: varchar('user_id', { length: 24 }).references(() => users.id),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -44,7 +40,6 @@ export const tickets = pgTable(
     index('tickets_attention_started_idx').on(t.attentionStartedAt),
     index('tickets_attention_finished_idx').on(t.attentionFinishedAt),
     index('tickets_user_id_idx').on(t.userId),
-    index('tickets_service_window_id_idx').on(t.serviceWindowId),
   ],
 );
 
@@ -52,9 +47,5 @@ export const ticketsRelations = relations(tickets, ({ one }) => ({
   user: one(users, {
     fields: [tickets.userId],
     references: [users.id],
-  }),
-  serviceWindow: one(serviceWindows, {
-    fields: [tickets.serviceWindowId],
-    references: [serviceWindows.id],
   }),
 }));

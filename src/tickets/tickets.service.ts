@@ -55,15 +55,6 @@ export class TicketsService {
         `El paquete con el Codigo ${dto.packageCode} no encontrado`,
       );
     }
-    const serviceWindow = await this.db.query.serviceWindows.findFirst({
-      where: eq(schema.serviceWindows.code, found.ventanillaCode),
-    });
-
-    if (!serviceWindow) {
-      throw new NotFoundException(
-        `Ventanilla ${found.ventanillaCode} no encontrada`,
-      );
-    }
 
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
@@ -88,7 +79,6 @@ export class TicketsService {
           code,
           packageCode: dto.packageCode,
           type: dto.type,
-          serviceWindowId: serviceWindow.id,
         })
         .returning({
           id: schema.tickets.id,

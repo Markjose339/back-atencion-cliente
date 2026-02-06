@@ -31,17 +31,6 @@ export class CustomerServiceService extends PaginationService {
 
     const user = await this.db.query.users.findFirst({
       where: eq(schema.users.id, userId),
-      columns: {
-        serviceWindowId: true,
-      },
-      with: {
-        serviceWindow: {
-          columns: {
-            name: true,
-            code: true,
-          },
-        },
-      },
     });
 
     if (!user) {
@@ -68,9 +57,6 @@ export class CustomerServiceService extends PaginationService {
             : undefined,
         )
       : and(
-          user.serviceWindowId
-            ? eq(schema.tickets.serviceWindowId, user.serviceWindowId)
-            : undefined,
           isNull(schema.tickets.userId),
           search
             ? or(
@@ -108,7 +94,6 @@ export class CustomerServiceService extends PaginationService {
     return {
       data,
       meta,
-      serviceWindowName: user.serviceWindow?.name,
       isAttendingTicket: !!ticketInProgress,
     };
   }
@@ -129,23 +114,9 @@ export class CustomerServiceService extends PaginationService {
       .returning({
         id: schema.tickets.id,
         code: schema.tickets.code,
-        serviceWindowId: schema.tickets.serviceWindowId,
       });
 
-    if (!ticket.serviceWindowId) {
-      throw new Error('El ticket no tiene ventanilla asignada');
-    }
-
-    const serviceWindow = await this.db.query.serviceWindows.findFirst({
-      where: eq(schema.serviceWindows.id, ticket.serviceWindowId),
-      columns: {
-        code: true,
-        name: true,
-      },
-    });
-    this.websocketGateway.server
-      .to('tickets')
-      .emit('ticket:started', serviceWindow);
+    this.websocketGateway.server.to('tickets').emit('ticket:started');
     return {
       message: `Atención del ticket "${ticket.code}" iniciada correctamente`,
     };
@@ -181,16 +152,7 @@ export class CustomerServiceService extends PaginationService {
       columns: {
         id: true,
         code: true,
-        serviceWindowId: true,
         attentionStartedAt: true,
-      },
-      with: {
-        serviceWindow: {
-          columns: {
-            code: true,
-            name: true,
-          },
-        },
       },
       orderBy: (tickets, { asc }) => asc(tickets.attentionStartedAt),
     });
@@ -198,8 +160,6 @@ export class CustomerServiceService extends PaginationService {
     return attendingTickets.map((ticket) => ({
       id: ticket.id,
       code: ticket.code,
-      window: ticket.serviceWindow?.code || '',
-      windowName: ticket.serviceWindow?.name || '',
     }));
   }
 }
