@@ -62,6 +62,7 @@ export class ServicesService extends PaginationService {
         columns: {
           id: true,
           name: true,
+          abbreviation: true,
           code: true,
           createdAt: true,
         },
