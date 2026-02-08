@@ -15,6 +15,7 @@ import { WebsocketModule } from './websocket/websocket.module';
 import { BranchesModule } from './branches/branches.module';
 import { ServicesModule } from './services/services.module';
 import { WindowsModule } from './windows/windows.module';
+import { AssignmentsModule } from './assignments/assignments.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { WindowsModule } from './windows/windows.module';
     BranchesModule,
     ServicesModule,
     WindowsModule,
+    AssignmentsModule,
   ],
   controllers: [],
   providers: [

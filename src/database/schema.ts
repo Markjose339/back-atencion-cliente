@@ -7,6 +7,7 @@ import * as sessionsSchema from '@/auth/entities/session.entity';
 import * as ticketsSchema from '@/tickets/entities/ticket.entity';
 import * as branchesSchema from '@/branches/entities/branch.entity';
 import * as servicesSchema from '@/services/entities/service.entity';
+import * as branchWindowServicesSchema from '@/services/entities/branch_window_service.entity';
 import * as windowsSchema from '@/windows/entities/window.entity';
 
 export const schema = {
@@ -19,5 +20,6 @@ export const schema = {
   ...ticketsSchema,
   ...branchesSchema,
   ...servicesSchema,
+  ...branchWindowServicesSchema,
   ...windowsSchema,
 };

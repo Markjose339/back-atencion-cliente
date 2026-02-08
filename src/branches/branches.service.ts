@@ -45,7 +45,6 @@ export class BranchesService extends PaginationService {
       ? or(
           ilike(schema.branches.id, `%${search}%`),
           ilike(schema.branches.name, `%${search}%`),
-          ilike(schema.branches.departmentName, `%${search}%`),
         )
       : undefined;
 

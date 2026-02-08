@@ -1,13 +1,17 @@
 import { branches } from '@/branches/entities/branch.entity';
 import { windows } from '@/windows/entities/window.entity';
-import { pgTable, varchar, primaryKey, index } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { services } from './service.entity';
 import { users } from '@/users/entities/user.entity';
 import { relations } from 'drizzle-orm';
+import { createId } from '@paralleldrive/cuid2';
 
 export const branchWindowServices = pgTable(
   'branch_window_services',
   {
+    id: varchar('id', { length: 24 })
+      .primaryKey()
+      .$defaultFn(() => createId()),
     branchId: varchar('branch_id', { length: 24 })
       .references(() => branches.id)
       .notNull(),
@@ -22,7 +26,13 @@ export const branchWindowServices = pgTable(
       .notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.branchId, t.windowId, t.serviceId, t.userId] }),
+    uniqueIndex('branch_window_services_unique_combo').on(
+      t.branchId,
+      t.windowId,
+      t.serviceId,
+      t.userId,
+    ),
+    index('branch_window_services_id_idx').on(t.id),
     index('branch_window_services_branch_idx').on(t.branchId),
     index('branch_window_services_window_idx').on(t.windowId),
     index('branch_window_services_service_idx').on(t.serviceId),
