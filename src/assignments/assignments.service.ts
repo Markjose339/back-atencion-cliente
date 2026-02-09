@@ -68,73 +68,71 @@ export class AssignmentsService extends PaginationService {
   async findAll(paginationDto: PaginationDto) {
     const { page, limit } = this.validatePaginationParams(paginationDto);
     const { search } = paginationDto;
-    const skip = this.calulateSkip(page, limit);
+    const offset = this.calulateSkip(page, limit);
+
+    const bws = schema.branchWindowServices;
+    const b = schema.branches;
+    const w = schema.windows;
+    const s = schema.services;
+    const u = schema.users;
 
     const where = search
       ? or(
-          ilike(schema.branchWindowServices.id, `%${search}%`),
-          ilike(schema.branchWindowServices.branchId, `%${search}%`),
-          ilike(schema.branchWindowServices.windowId, `%${search}%`),
-          ilike(schema.branchWindowServices.serviceId, `%${search}%`),
-          ilike(schema.branchWindowServices.userId, `%${search}%`),
+          ilike(b.name, `%${search}%`),
+          ilike(w.name, `%${search}%`),
+          ilike(s.name, `%${search}%`),
+          ilike(s.abbreviation, `%${search}%`),
+          ilike(u.name, `%${search}%`),
         )
       : undefined;
 
-    const [assignments, [{ value: total }]] = await Promise.all([
-      this.db.query.branchWindowServices.findMany({
-        where,
-        limit,
-        offset: skip,
-        columns: {
-          id: true,
-          branchId: true,
-          windowId: true,
-          serviceId: true,
-          userId: true,
-        },
-        with: {
+    const [rows, [{ value: total }]] = await Promise.all([
+      this.db
+        .select({
+          id: bws.id,
+
           branch: {
-            columns: {
-              id: true,
-              name: true,
-            },
+            id: b.id,
+            name: b.name,
           },
           window: {
-            columns: {
-              id: true,
-              name: true,
-            },
+            id: w.id,
+            name: w.name,
           },
           service: {
-            columns: {
-              id: true,
-              name: true,
-              abbreviation: true,
-              code: true,
-            },
+            id: s.id,
+            name: s.name,
+            abbreviation: s.abbreviation,
+            code: s.code,
           },
           user: {
-            columns: {
-              id: true,
-              name: true,
-              email: true,
-            },
+            id: u.id,
+            name: u.name,
+            email: u.email,
           },
-        },
-      }),
+        })
+        .from(bws)
+        .leftJoin(b, eq(b.id, bws.branchId))
+        .leftJoin(w, eq(w.id, bws.windowId))
+        .leftJoin(s, eq(s.id, bws.serviceId))
+        .leftJoin(u, eq(u.id, bws.userId))
+        .where(where)
+        .limit(limit)
+        .offset(offset),
+
       this.db
         .select({ value: count() })
-        .from(schema.branchWindowServices)
+        .from(bws)
+        .leftJoin(b, eq(b.id, bws.branchId))
+        .leftJoin(w, eq(w.id, bws.windowId))
+        .leftJoin(s, eq(s.id, bws.serviceId))
+        .leftJoin(u, eq(u.id, bws.userId))
         .where(where),
     ]);
 
-    const data = assignments.map((assignment) =>
-      this.mapAssignment(assignment),
-    );
+    const meta = this.builPaginationMeta(total, page, limit, rows.length);
 
-    const meta = this.builPaginationMeta(total, page, limit, data.length);
-
-    return { data, meta };
+    return { data: rows, meta };
   }
 
   async findOne(id: string) {
