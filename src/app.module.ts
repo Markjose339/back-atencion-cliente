@@ -16,6 +16,7 @@ import { BranchesModule } from './branches/branches.module';
 import { ServicesModule } from './services/services.module';
 import { WindowsModule } from './windows/windows.module';
 import { AssignmentsModule } from './assignments/assignments.module';
+import { PublicModule } from './public/public.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AssignmentsModule } from './assignments/assignments.module';
     ServicesModule,
     WindowsModule,
     AssignmentsModule,
+    PublicModule,
   ],
   controllers: [],
   providers: [

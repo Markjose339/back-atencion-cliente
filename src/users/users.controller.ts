@@ -27,6 +27,11 @@ export class UsersController {
     return this.usersService.findAll(paginationDto);
   }
 
+  @Get(':id/queues')
+  getQueues(@Param('id') id: string) {
+    return this.usersService.getQueues(id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);

@@ -37,6 +37,6 @@ export const users = pgTable(
 
 export const usersRelations = relations(users, ({ many }) => ({
   userRoles: many(userRoles),
-  operatorTicket: many(tickets),
+  tickets: many(tickets),
   branchWindowServices: many(branchWindowServices),
 }));

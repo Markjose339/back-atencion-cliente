@@ -11,30 +11,7 @@ export class TicketsService {
   private readonly PREFIXES = {
     REGULAR: 'R',
     PREFERENCIAL: 'P',
-  };
-
-  private readonly PACKAGE_TO_VENTANILLA_ARRAY = [
-    { packageCode: 'PKG-DIR-001', ventanillaCode: 'DD' },
-    { packageCode: 'PKG-DIR-002', ventanillaCode: 'DD' },
-    { packageCode: 'PKG-DIR-003', ventanillaCode: 'DD' },
-    { packageCode: 'DIR-2024-001', ventanillaCode: 'DD' },
-    { packageCode: 'DIR-2024-002', ventanillaCode: 'DD' },
-    { packageCode: 'PKG-DNI-001', ventanillaCode: 'DND' },
-    { packageCode: 'PKG-DNI-002', ventanillaCode: 'DND' },
-    { packageCode: 'PKG-PAS-001', ventanillaCode: 'DND' },
-    { packageCode: 'DND-2024-001', ventanillaCode: 'DND' },
-    { packageCode: 'DND-2024-002', ventanillaCode: 'DND' },
-    { packageCode: 'PKG-EMS-001', ventanillaCode: 'EMS' },
-    { packageCode: 'PKG-EMS-002', ventanillaCode: 'EMS' },
-    { packageCode: 'PKG-ENV-001', ventanillaCode: 'EMS' },
-    { packageCode: 'EMS-2024-001', ventanillaCode: 'EMS' },
-    { packageCode: 'EMS-2024-002', ventanillaCode: 'EMS' },
-    { packageCode: 'PKG-URG-001', ventanillaCode: 'UR' },
-    { packageCode: 'PKG-REC-001', ventanillaCode: 'UR' },
-    { packageCode: 'PKG-REC-002', ventanillaCode: 'UR' },
-    { packageCode: 'UR-2024-001', ventanillaCode: 'UR' },
-    { packageCode: 'UR-2024-002', ventanillaCode: 'UR' },
-  ];
+  } as const;
 
   constructor(
     @Inject(DB_CONN)
@@ -44,31 +21,24 @@ export class TicketsService {
 
   async create(dto: CreateTicketDto) {
     const todayRange = this.getTodayRange();
-    const lockKey = this.getLockKey(dto.type);
-
-    const found = this.PACKAGE_TO_VENTANILLA_ARRAY.find(
-      (item) => item.packageCode === dto.packageCode,
-    );
-
-    if (!found) {
-      throw new NotFoundException(
-        `El paquete con el Codigo ${dto.packageCode} no encontrado`,
-      );
-    }
+    const lockKey = this.getLockKey(dto.type, dto.branchId);
 
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+
       const lastTicket = await tx.query.tickets.findFirst({
         where: and(
           eq(schema.tickets.type, dto.type),
+          eq(schema.tickets.branchId, dto.branchId),
           gte(schema.tickets.createdAt, todayRange.start),
           lte(schema.tickets.createdAt, todayRange.end),
         ),
         orderBy: desc(schema.tickets.createdAt),
+        columns: { code: true },
       });
 
       const nextSequence = lastTicket
-        ? Number(lastTicket.code.slice(1)) + 1
+        ? Number(String(lastTicket.code).slice(1)) + 1
         : 1;
 
       const code = this.generateTicketCode(dto.type, nextSequence);
@@ -79,15 +49,32 @@ export class TicketsService {
           code,
           packageCode: dto.packageCode,
           type: dto.type,
+          branchId: dto.branchId,
+          serviceId: dto.serviceId,
         })
         .returning({
           id: schema.tickets.id,
           code: schema.tickets.code,
           packageCode: schema.tickets.packageCode,
+          type: schema.tickets.type,
+          branchId: schema.tickets.branchId,
+          windowId: schema.tickets.windowId,
+          serviceId: schema.tickets.serviceId,
           createdAt: schema.tickets.createdAt,
         });
 
-      this.websocketGateway.server.to('tickets').emit('ticket:created', ticket);
+      const privateRoom = `queue:${dto.branchId}`;
+      this.websocketGateway.server
+        .to(privateRoom)
+        .emit('ticket:created', ticket);
+
+      const publicRoom = `public:queue:${dto.branchId}`;
+      this.websocketGateway.server.to(publicRoom).emit('ticket:created', {
+        id: ticket.id,
+        code: ticket.code,
+        type: ticket.type,
+        createdAt: ticket.createdAt,
+      });
 
       return ticket;
     });
@@ -111,24 +98,27 @@ export class TicketsService {
     return { start, end };
   }
 
-  private getLockKey(type: 'REGULAR' | 'PREFERENCIAL'): number {
+  private getLockKey(
+    type: 'REGULAR' | 'PREFERENCIAL',
+    branchId: string,
+  ): number {
     const today = new Date().toISOString().slice(0, 10);
     const base = type === 'REGULAR' ? 1 : 2;
 
-    let hash = base;
-    for (const char of today) {
+    const key = `${today}|${base}|${branchId}`;
+    let hash = 0;
+
+    for (const char of key) {
       hash = (hash * 31 + char.charCodeAt(0)) % 2147483647;
     }
 
-    return hash;
+    return hash === 0 ? 1 : hash;
   }
 
   async validatedTicketId(id: string) {
     const ticket = await this.db.query.tickets.findFirst({
       where: eq(schema.tickets.id, id),
-      columns: {
-        id: true,
-      },
+      columns: { id: true },
     });
 
     if (!ticket) {

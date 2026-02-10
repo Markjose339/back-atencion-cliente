@@ -1,4 +1,5 @@
 import { branchWindowServices } from '@/services/entities/branch_window_service.entity';
+import { tickets } from '@/tickets/entities/ticket.entity';
 import { createId } from '@paralleldrive/cuid2';
 import { relations } from 'drizzle-orm';
 import { pgTable, varchar, timestamp, index } from 'drizzle-orm/pg-core';
@@ -23,4 +24,5 @@ export const windows = pgTable(
 
 export const windowsRelations = relations(windows, ({ many }) => ({
   branchWindowServices: many(branchWindowServices),
+  tickets: many(tickets),
 }));

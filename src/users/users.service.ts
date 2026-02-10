@@ -312,4 +312,31 @@ export class UsersService extends PaginationService {
       roles: user.userRoles.map((ur) => ur.role),
     };
   }
+
+  async getQueues(userId: string) {
+    await this.validatedUserId(userId);
+
+    const queues = await this.db.query.branchWindowServices.findMany({
+      where: eq(schema.branchWindowServices.userId, userId),
+      columns: {
+        id: true,
+        branchId: true,
+        windowId: true,
+        serviceId: true,
+      },
+      with: {
+        branch: { columns: { id: true, name: true } },
+        window: { columns: { id: true, name: true } },
+        service: { columns: { id: true, name: true, code: true } },
+      },
+    });
+
+    return queues.map((q) => ({
+      id: q.id,
+      branch: q.branch,
+      window: q.window,
+      service: q.service,
+      room: `queue:${q.branchId}:${q.windowId}:${q.serviceId}`,
+    }));
+  }
 }
