@@ -65,11 +65,9 @@ export const tickets = pgTable(
       .notNull(),
   },
   (t) => [
-    // búsquedas directas
     index('tickets_code_idx').on(t.code),
     index('tickets_package_code_idx').on(t.packageCode),
 
-    // “siguiente ticket” (cola por sucursal+servicio)
     index('tickets_next_idx').on(
       t.branchId,
       t.serviceId,
@@ -77,23 +75,19 @@ export const tickets = pgTable(
       t.createdAt,
     ),
 
-    // cola por sucursal (pantalla pública por sucursal)
     index('tickets_branch_status_created_idx').on(
       t.branchId,
       t.status,
       t.createdAt,
     ),
 
-    // operador: ver mis tickets por estado/tiempo
     index('tickets_user_status_idx').on(t.userId, t.status),
     index('tickets_user_status_called_idx').on(t.userId, t.status, t.calledAt),
 
-    // auditoría/tiempos (útil para reportes)
     index('tickets_status_called_idx').on(t.status, t.calledAt),
     index('tickets_status_started_idx').on(t.status, t.attentionStartedAt),
     index('tickets_status_finished_idx').on(t.status, t.attentionFinishedAt),
 
-    // asignación a ventanilla-servicio (bws)
     index('tickets_bws_idx').on(t.branchWindowServiceId),
     index('tickets_bws_status_idx').on(t.branchWindowServiceId, t.status),
   ],

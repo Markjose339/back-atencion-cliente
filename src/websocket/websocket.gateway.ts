@@ -9,7 +9,7 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
-import { Inject, UnauthorizedException } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Server, Socket } from 'socket.io';
 import { eq, and, inArray } from 'drizzle-orm';
@@ -25,10 +25,23 @@ type SocketData = {
   user?: User;
 };
 
+type AuthPayload = {
+  token?: string;
+};
+
+type AuthReadyPayload = {
+  ok: true;
+  userId: string;
+};
+
+type ServerToClientEvents = {
+  'auth:ready': (payload: AuthReadyPayload) => void;
+};
+
 type AuthedSocket = Socket<
-  Record<string, never>,
-  Record<string, never>,
-  Record<string, never>,
+  Record<string, never>, // ClientToServerEvents (no tipado por ahora)
+  ServerToClientEvents, // ✅ ServerToClientEvents
+  Record<string, never>, // InterServerEvents
   SocketData
 >;
 
@@ -55,7 +68,6 @@ export class WebsocketGateway
     console.log(`✅ Cliente conectado: ${client.id}`);
 
     const token = this.getAccessTokenFromSocket(client);
-
     if (!token) return;
 
     const payload = await this.authService
@@ -71,6 +83,10 @@ export class WebsocketGateway
     console.log(`🔐 Socket autenticado: ${client.id} user=${user.id}`);
 
     await client.join(`user:${user.id}`);
+
+    // ✅ IMPORTANTE: avisa al frontend que ya está listo para queue:register
+    const ready: AuthReadyPayload = { ok: true, userId: user.id };
+    client.emit('auth:ready', ready);
   }
 
   handleDisconnect(client: AuthedSocket) {
@@ -95,7 +111,9 @@ export class WebsocketGateway
   @SubscribeMessage('queue:register')
   async registerQueues(@ConnectedSocket() client: AuthedSocket) {
     const user = client.data.user;
-    if (!user) throw new UnauthorizedException('No autenticado');
+
+    // ✅ Nunca usar throw en eventos con ACK
+    if (!user) return { ok: false, message: 'No autenticado' };
 
     const userBWs = await this.db.query.userBranchWindows.findMany({
       where: and(
@@ -105,11 +123,16 @@ export class WebsocketGateway
       columns: { branchId: true, branchWindowId: true },
     });
 
-    if (userBWs.length === 0) return { ok: true, rooms: [] };
+    console.log('🔎 userBWs:', user.id, userBWs);
+
+    if (userBWs.length === 0) {
+      console.log('⚠️ queue:register -> sin userBranchWindows activos');
+      return { ok: true, rooms: [] };
+    }
 
     const branchWindowIds = userBWs.map((r) => r.branchWindowId);
 
-    // 2) servicios habilitados en esas ventanillas
+    // servicios habilitados en esas ventanillas
     const services = await this.db.query.branchWindowServices.findMany({
       where: and(
         inArray(schema.branchWindowServices.branchWindowId, branchWindowIds),
@@ -117,6 +140,8 @@ export class WebsocketGateway
       ),
       columns: { branchWindowId: true, serviceId: true },
     });
+
+    console.log('🔎 services:', services);
 
     const bwToBranch = new Map<string, string>();
     for (const r of userBWs) bwToBranch.set(r.branchWindowId, r.branchId);
@@ -131,6 +156,8 @@ export class WebsocketGateway
     const rooms = Array.from(roomSet);
     for (const room of rooms) await client.join(room);
 
+    console.log('✅ rooms after queue:register:', Array.from(client.rooms));
+
     return { ok: true, rooms };
   }
 
@@ -140,7 +167,9 @@ export class WebsocketGateway
     @MessageBody() body: unknown,
   ) {
     const user = client.data.user;
-    if (!user) throw new UnauthorizedException('No autenticado');
+
+    // ✅ nunca throw con ACK
+    if (!user) return { ok: false, message: 'No autenticado' };
 
     const data = this.parseQueueJoinBody(body);
     if (!data) return { ok: false, message: 'Datos incompletos' };
@@ -155,10 +184,10 @@ export class WebsocketGateway
     });
 
     if (!ubw?.branchWindowId) {
-      throw new UnauthorizedException('No tienes acceso a esa sucursal');
+      return { ok: false, message: 'No tienes acceso a esa sucursal' };
     }
 
-    // 2) validar que esa ventanilla tenga habilitado el servicio
+    // validar que esa ventanilla tenga habilitado el servicio
     const allowed = await this.db.query.branchWindowServices.findFirst({
       where: and(
         eq(schema.branchWindowServices.branchWindowId, ubw.branchWindowId),
@@ -169,7 +198,7 @@ export class WebsocketGateway
     });
 
     if (!allowed) {
-      throw new UnauthorizedException('No tienes acceso a esa cola');
+      return { ok: false, message: 'No tienes acceso a esa cola' };
     }
 
     const room = `queue:${data.branchId}:${data.serviceId}`;
@@ -179,24 +208,17 @@ export class WebsocketGateway
   }
 
   private getAccessTokenFromSocket(client: AuthedSocket): string | null {
-    const auth = client.handshake.auth as unknown;
+    const auth = client.handshake.auth as AuthPayload | undefined;
 
-    if (
-      this.isRecord(auth) &&
-      typeof auth.token === 'string' &&
-      auth.token.length > 0
-    ) {
-      return auth.token;
-    }
+    if (auth?.token && auth.token.length > 0) return auth.token;
 
     const cookieHeader = client.handshake.headers.cookie;
-    if (typeof cookieHeader !== 'string' || cookieHeader.length === 0)
-      return null;
+    if (!cookieHeader) return null;
 
     const cookies = this.parseCookies(cookieHeader);
     const token = cookies.accessToken;
 
-    return typeof token === 'string' && token.length > 0 ? token : null;
+    return token && token.length > 0 ? token : null;
   }
 
   private parseCookies(cookieHeader: string): Record<string, string> {
@@ -221,15 +243,14 @@ export class WebsocketGateway
   private parseQueueJoinBody(body: unknown): QueueJoinBody | null {
     if (!this.isRecord(body)) return null;
 
-    const { branchId, serviceId } = body;
-
+    const maybe = body as Partial<QueueJoinBody>;
     if (
-      typeof branchId === 'string' &&
-      branchId.length > 0 &&
-      typeof serviceId === 'string' &&
-      serviceId.length > 0
+      typeof maybe.branchId === 'string' &&
+      maybe.branchId.length > 0 &&
+      typeof maybe.serviceId === 'string' &&
+      maybe.serviceId.length > 0
     ) {
-      return { branchId, serviceId };
+      return { branchId: maybe.branchId, serviceId: maybe.serviceId };
     }
 
     return null;
