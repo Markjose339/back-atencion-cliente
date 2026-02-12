@@ -12,13 +12,12 @@ import {
 import { Inject, UnauthorizedException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Server, Socket } from 'socket.io';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { AuthService } from '@/auth/auth.service';
 import type { User } from '@/users/interfaces/user.interface';
 
 type QueueJoinBody = {
   branchId: string;
-  windowId: string;
   serviceId: string;
 };
 
@@ -57,11 +56,8 @@ export class WebsocketGateway
 
     const token = this.getAccessTokenFromSocket(client);
 
-    // Si no hay token => conexión pública, listo.
     if (!token) return;
 
-    // ✅ Sin try/catch: si token es inválido, que NO autentique (pero deja conexión viva)
-    // Para eso, convertimos el error en "no autenticado" con .catch(() => null)
     const payload = await this.authService
       .validatedAccessToken(token)
       .catch(() => null);
@@ -81,9 +77,6 @@ export class WebsocketGateway
     console.log(`❌ Cliente desconectado: ${client.id}`);
   }
 
-  // =========================
-  // ✅ PUBLICO (sin auth)
-  // =========================
   @SubscribeMessage('public:join')
   async publicJoin(
     @ConnectedSocket() client: AuthedSocket,
@@ -92,32 +85,51 @@ export class WebsocketGateway
     const data = this.parseQueueJoinBody(body);
     if (!data) return { ok: false, message: 'Datos incompletos' };
 
-    const room = `public:queue:${data.branchId}:${data.windowId}:${data.serviceId}`;
+    // Banco PRO: público por sucursal+servicio (sin ventanilla)
+    const room = `public:queue:${data.branchId}:${data.serviceId}`;
     await client.join(room);
 
     return { ok: true, room };
   }
 
-  // =========================
-  // ✅ PRIVADO (requiere JWT)
-  // =========================
   @SubscribeMessage('queue:register')
   async registerQueues(@ConnectedSocket() client: AuthedSocket) {
     const user = client.data.user;
     if (!user) throw new UnauthorizedException('No autenticado');
 
-    const queues = await this.db.query.branchWindowServices.findMany({
-      where: eq(schema.branchWindowServices.userId, user.id),
-      columns: { branchId: true, windowId: true, serviceId: true },
+    const userBWs = await this.db.query.userBranchWindows.findMany({
+      where: and(
+        eq(schema.userBranchWindows.userId, user.id),
+        eq(schema.userBranchWindows.isActive, true),
+      ),
+      columns: { branchId: true, branchWindowId: true },
     });
 
-    const rooms = queues.map(
-      (q) => `queue:${q.branchId}:${q.windowId}:${q.serviceId}`,
-    );
+    if (userBWs.length === 0) return { ok: true, rooms: [] };
 
-    for (const room of rooms) {
-      await client.join(room);
+    const branchWindowIds = userBWs.map((r) => r.branchWindowId);
+
+    // 2) servicios habilitados en esas ventanillas
+    const services = await this.db.query.branchWindowServices.findMany({
+      where: and(
+        inArray(schema.branchWindowServices.branchWindowId, branchWindowIds),
+        eq(schema.branchWindowServices.isActive, true),
+      ),
+      columns: { branchWindowId: true, serviceId: true },
+    });
+
+    const bwToBranch = new Map<string, string>();
+    for (const r of userBWs) bwToBranch.set(r.branchWindowId, r.branchId);
+
+    const roomSet = new Set<string>();
+    for (const s of services) {
+      const branchId = bwToBranch.get(s.branchWindowId);
+      if (!branchId) continue;
+      roomSet.add(`queue:${branchId}:${s.serviceId}`);
     }
+
+    const rooms = Array.from(roomSet);
+    for (const room of rooms) await client.join(room);
 
     return { ok: true, rooms };
   }
@@ -133,30 +145,40 @@ export class WebsocketGateway
     const data = this.parseQueueJoinBody(body);
     if (!data) return { ok: false, message: 'Datos incompletos' };
 
+    const ubw = await this.db.query.userBranchWindows.findFirst({
+      where: and(
+        eq(schema.userBranchWindows.userId, user.id),
+        eq(schema.userBranchWindows.branchId, data.branchId),
+        eq(schema.userBranchWindows.isActive, true),
+      ),
+      columns: { branchWindowId: true },
+    });
+
+    if (!ubw?.branchWindowId) {
+      throw new UnauthorizedException('No tienes acceso a esa sucursal');
+    }
+
+    // 2) validar que esa ventanilla tenga habilitado el servicio
     const allowed = await this.db.query.branchWindowServices.findFirst({
       where: and(
-        eq(schema.branchWindowServices.userId, user.id),
-        eq(schema.branchWindowServices.branchId, data.branchId),
-        eq(schema.branchWindowServices.windowId, data.windowId),
+        eq(schema.branchWindowServices.branchWindowId, ubw.branchWindowId),
         eq(schema.branchWindowServices.serviceId, data.serviceId),
+        eq(schema.branchWindowServices.isActive, true),
       ),
       columns: { id: true },
     });
 
-    if (!allowed)
+    if (!allowed) {
       throw new UnauthorizedException('No tienes acceso a esa cola');
+    }
 
-    const room = `queue:${data.branchId}:${data.windowId}:${data.serviceId}`;
+    const room = `queue:${data.branchId}:${data.serviceId}`;
     await client.join(room);
 
     return { ok: true, room };
   }
 
-  // =========================
-  // Helpers
-  // =========================
   private getAccessTokenFromSocket(client: AuthedSocket): string | null {
-    // 1) handshake.auth.token (si lo envías)
     const auth = client.handshake.auth as unknown;
 
     if (
@@ -167,7 +189,6 @@ export class WebsocketGateway
       return auth.token;
     }
 
-    // 2) cookie accessToken
     const cookieHeader = client.handshake.headers.cookie;
     if (typeof cookieHeader !== 'string' || cookieHeader.length === 0)
       return null;
@@ -200,17 +221,15 @@ export class WebsocketGateway
   private parseQueueJoinBody(body: unknown): QueueJoinBody | null {
     if (!this.isRecord(body)) return null;
 
-    const { branchId, windowId, serviceId } = body;
+    const { branchId, serviceId } = body;
 
     if (
       typeof branchId === 'string' &&
       branchId.length > 0 &&
-      typeof windowId === 'string' &&
-      windowId.length > 0 &&
       typeof serviceId === 'string' &&
       serviceId.length > 0
     ) {
-      return { branchId, windowId, serviceId };
+      return { branchId, serviceId };
     }
 
     return null;

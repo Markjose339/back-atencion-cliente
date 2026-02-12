@@ -1,4 +1,3 @@
-import { branchWindowServices } from '@/services/entities/branch_window_service.entity';
 import { tickets } from '@/tickets/entities/ticket.entity';
 import { createId } from '@paralleldrive/cuid2';
 import { relations } from 'drizzle-orm';
@@ -8,7 +7,9 @@ import {
   timestamp,
   index,
   pgEnum,
+  boolean,
 } from 'drizzle-orm/pg-core';
+import { branchWindows } from './branch-windows.entity';
 
 export const boliviaDepartments = pgEnum('bolivia_departments', [
   'La Paz',
@@ -32,7 +33,7 @@ export const branches = pgTable(
     name: varchar('name', { length: 50 }).unique().notNull(),
     address: varchar('address', { length: 255 }).notNull(),
     departmentName: boliviaDepartments('department_name').notNull(),
-
+    isActive: boolean('is_active').default(true).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -46,6 +47,6 @@ export const branches = pgTable(
 );
 
 export const branchesRelations = relations(branches, ({ many }) => ({
-  branchWindowServices: many(branchWindowServices),
   tickets: many(tickets),
+  branchWindows: many(branchWindows),
 }));

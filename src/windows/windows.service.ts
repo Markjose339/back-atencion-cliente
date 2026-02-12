@@ -23,13 +23,17 @@ export class WindowsService extends PaginationService {
   }
 
   async create(createWindowDto: CreateWindowDto) {
-    await this.validateWindowName(createWindowDto.name);
+    await Promise.all([
+      this.validateWindowName(createWindowDto.name),
+      this.validateWindowCode(createWindowDto.code),
+    ]);
 
     const [window] = await this.db
       .insert(schema.windows)
       .values(createWindowDto)
       .returning({
         id: schema.windows.id,
+        code: schema.windows.code,
         name: schema.windows.name,
         createdAt: schema.windows.createdAt,
       });
@@ -45,6 +49,7 @@ export class WindowsService extends PaginationService {
     const where = search
       ? or(
           ilike(schema.windows.id, `%${search}%`),
+          ilike(schema.windows.code, `%${search}%`),
           ilike(schema.windows.name, `%${search}%`),
         )
       : undefined;
@@ -56,6 +61,7 @@ export class WindowsService extends PaginationService {
         offset: skip,
         columns: {
           id: true,
+          code: true,
           name: true,
           createdAt: true,
         },
@@ -81,6 +87,10 @@ export class WindowsService extends PaginationService {
       validations.push(this.validateWindowName(updateWindowDto.name, id));
     }
 
+    if (updateWindowDto.code) {
+      validations.push(this.validateWindowCode(updateWindowDto.code, id));
+    }
+
     await Promise.all(validations);
 
     const [window] = await this.db
@@ -89,6 +99,7 @@ export class WindowsService extends PaginationService {
       .where(eq(schema.windows.id, id))
       .returning({
         id: schema.windows.id,
+        code: schema.windows.code,
         name: schema.windows.name,
         createdAt: schema.windows.createdAt,
       });
@@ -104,6 +115,7 @@ export class WindowsService extends PaginationService {
       .where(eq(schema.windows.id, id))
       .returning({
         id: schema.windows.id,
+        code: schema.windows.code,
         name: schema.windows.name,
         createdAt: schema.windows.createdAt,
       });
@@ -131,5 +143,16 @@ export class WindowsService extends PaginationService {
 
     if (window)
       throw new ConflictException(`Ventana con el nombre "${name}" ya existe`);
+  }
+
+  async validateWindowCode(code: string, excludeId?: string) {
+    const where = excludeId
+      ? and(eq(schema.windows.code, code), ne(schema.windows.id, excludeId))
+      : eq(schema.windows.code, code);
+
+    const window = await this.db.query.windows.findFirst({ where });
+
+    if (window)
+      throw new ConflictException(`Ventana con el codigo "${code}" ya existe`);
   }
 }

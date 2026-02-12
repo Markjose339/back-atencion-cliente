@@ -49,6 +49,7 @@ export class TicketsService {
           code,
           packageCode: dto.packageCode,
           type: dto.type,
+          status: 'PENDIENTE',
           branchId: dto.branchId,
           serviceId: dto.serviceId,
         })
@@ -57,8 +58,8 @@ export class TicketsService {
           code: schema.tickets.code,
           packageCode: schema.tickets.packageCode,
           type: schema.tickets.type,
+          status: schema.tickets.status,
           branchId: schema.tickets.branchId,
-          windowId: schema.tickets.windowId,
           serviceId: schema.tickets.serviceId,
           createdAt: schema.tickets.createdAt,
         });
@@ -73,6 +74,7 @@ export class TicketsService {
         id: ticket.id,
         code: ticket.code,
         type: ticket.type,
+        status: ticket.status,
         createdAt: ticket.createdAt,
       });
 

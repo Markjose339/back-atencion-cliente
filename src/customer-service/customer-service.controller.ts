@@ -1,8 +1,19 @@
-import { Controller, Get, Param, Patch, Query, Req } from '@nestjs/common';
-import { CustomerServiceService } from './customer-service.service';
-import { PaginationDto } from '@/pagination/dto/pagination.dto';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import type { User } from '@/users/interfaces/user.interface';
+
+import { CustomerServiceService } from './customer-service.service';
+import { OperatorQueueQueryDto } from './dto/operator-queue-query.dto';
+import { CallNextDto } from './dto/call-next.dto';
 
 type UserRequest = Request & { user: User };
 
@@ -12,36 +23,50 @@ export class CustomerServiceController {
     private readonly customerServiceService: CustomerServiceService,
   ) {}
 
-  @Get()
-  findPendingTicketsByUserServiceWindow(
-    @Query() paginationDto: PaginationDto,
-    @Req() req: UserRequest,
-  ) {
+  @Get('queue')
+  findQueue(@Query() query: OperatorQueueQueryDto, @Req() req: UserRequest) {
+    const { branchId, serviceId, page, limit, search } = query;
+
     return this.customerServiceService.findPendingTicketsByUserServiceWindow(
       req.user.id,
-      paginationDto,
+      branchId,
+      serviceId,
+      { page, limit, search },
     );
   }
 
+  @Post('queue/call-next')
+  callNext(@Body() dto: CallNextDto, @Req() req: UserRequest) {
+    return this.customerServiceService.callNextTicket(
+      dto.branchId,
+      dto.serviceId,
+      req.user.id,
+    );
+  }
+
+  @Patch(':ticketId/recall')
+  recall(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
+    return this.customerServiceService.recallTicket(ticketId, req.user.id);
+  }
+
   @Patch(':ticketId/start')
-  startTicketAttention(
-    @Param('ticketId') ticketId: string,
-    @Req() req: UserRequest,
-  ) {
+  start(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
     return this.customerServiceService.startTicketAttention(
       ticketId,
       req.user.id,
     );
   }
 
-  @Patch(':ticketId/end')
-  endTicketAttention(
-    @Param('ticketId') ticketId: string,
-    @Req() req: UserRequest,
-  ) {
-    return this.customerServiceService.endTicketAttention(
+  @Patch(':ticketId/finish')
+  finish(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
+    return this.customerServiceService.finishTicketAttention(
       ticketId,
       req.user.id,
     );
+  }
+
+  @Patch(':ticketId/cancel')
+  cancel(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
+    return this.customerServiceService.cancelTicket(ticketId, req.user.id);
   }
 }

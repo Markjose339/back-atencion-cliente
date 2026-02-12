@@ -7,8 +7,10 @@ import * as sessionsSchema from '@/auth/entities/session.entity';
 import * as ticketsSchema from '@/tickets/entities/ticket.entity';
 import * as branchesSchema from '@/branches/entities/branch.entity';
 import * as servicesSchema from '@/services/entities/service.entity';
-import * as branchWindowServicesSchema from '@/services/entities/branch_window_service.entity';
 import * as windowsSchema from '@/windows/entities/window.entity';
+import * as branchWindowsSchema from '@/branches/entities/branch-windows.entity';
+import * as branchWindowServicesSchema from '@/branches/entities/branch_window_service.entity';
+import * as userBranchWindowsSchema from '@/users/entities/user-branch-windows.entity';
 
 export const schema = {
   ...permissionSchema,
@@ -20,6 +22,8 @@ export const schema = {
   ...ticketsSchema,
   ...branchesSchema,
   ...servicesSchema,
-  ...branchWindowServicesSchema,
   ...windowsSchema,
+  ...branchWindowsSchema,
+  ...branchWindowServicesSchema,
+  ...userBranchWindowsSchema,
 };

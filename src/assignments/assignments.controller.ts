@@ -1,47 +1,79 @@
+// assignments.controller.ts
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
+  Controller,
   Delete,
-  Query,
+  Get,
   Param,
+  Patch,
+  Post,
+  Query,
 } from '@nestjs/common';
-import { AssignmentsService } from './assignments.service';
-import { CreateAssignmentDto } from './dto/create-assignment.dto';
-import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
+import { AssignmentsService } from './assignments.service';
+import { CreateWindowServiceDto } from './dto/create-window-service.dto';
+import { UpdateWindowServiceDto } from './dto/update-window-service.dto';
+import { CreateOperatorAssignmentDto } from './dto/create-operator-assignment.dto';
+import { UpdateOperatorAssignmentDto } from './dto/update-operator-assignment.dto';
 
 @Controller('assignments')
 export class AssignmentsController {
   constructor(private readonly assignmentsService: AssignmentsService) {}
 
-  @Post()
-  create(@Body() createAssignmentDto: CreateAssignmentDto) {
-    return this.assignmentsService.create(createAssignmentDto);
+  // -------- A) Servicios habilitados por ventanilla (branch_window_services) --------
+  @Post('window-services')
+  createWindowService(@Body() dto: CreateWindowServiceDto) {
+    return this.assignmentsService.createWindowService(dto);
   }
 
-  @Get()
-  findAll(@Query() paginationDto: PaginationDto) {
-    return this.assignmentsService.findAll(paginationDto);
+  @Get('window-services')
+  listWindowServices(@Query() pagination: PaginationDto) {
+    return this.assignmentsService.listWindowServices(pagination);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.assignmentsService.findOne(id);
+  @Get('window-services/:id')
+  getWindowService(@Param('id') id: string) {
+    return this.assignmentsService.getWindowServiceById(id);
   }
 
-  @Patch(':id')
-  update(
+  @Patch('window-services/:id')
+  updateWindowService(
     @Param('id') id: string,
-    @Body() updateAssignmentDto: UpdateAssignmentDto,
+    @Body() dto: UpdateWindowServiceDto,
   ) {
-    return this.assignmentsService.update(id, updateAssignmentDto);
+    return this.assignmentsService.updateWindowService(id, dto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.assignmentsService.remove(id);
+  @Delete('window-services/:id')
+  deleteWindowService(@Param('id') id: string) {
+    return this.assignmentsService.deleteWindowService(id);
+  }
+
+  @Post('operators')
+  createOperator(@Body() dto: CreateOperatorAssignmentDto) {
+    return this.assignmentsService.createOperatorAssignment(dto);
+  }
+
+  @Get('operators')
+  listOperators(@Query() pagination: PaginationDto) {
+    return this.assignmentsService.listOperatorAssignments(pagination);
+  }
+
+  @Get('operators/:id')
+  getOperator(@Param('id') id: string) {
+    return this.assignmentsService.getOperatorAssignmentById(id);
+  }
+
+  @Patch('operators/:id')
+  updateOperator(
+    @Param('id') id: string,
+    @Body() dto: UpdateOperatorAssignmentDto,
+  ) {
+    return this.assignmentsService.updateOperatorAssignment(id, dto);
+  }
+
+  @Delete('operators/:id')
+  deleteOperator(@Param('id') id: string) {
+    return this.assignmentsService.deleteOperatorAssignment(id);
   }
 }

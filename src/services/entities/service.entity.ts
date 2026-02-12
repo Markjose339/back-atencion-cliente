@@ -1,8 +1,14 @@
 import { createId } from '@paralleldrive/cuid2';
 import { relations } from 'drizzle-orm';
-import { pgTable, varchar, timestamp, index } from 'drizzle-orm/pg-core';
-import { branchWindowServices } from './branch_window_service.entity';
+import {
+  pgTable,
+  varchar,
+  timestamp,
+  boolean,
+  index,
+} from 'drizzle-orm/pg-core';
 import { tickets } from '@/tickets/entities/ticket.entity';
+import { branchWindowServices } from '@/branches/entities/branch_window_service.entity';
 
 export const services = pgTable(
   'services',
@@ -14,6 +20,7 @@ export const services = pgTable(
     name: varchar('name', { length: 50 }).unique().notNull(),
     abbreviation: varchar('abbreviation', { length: 10 }).notNull(),
     code: varchar('code', { length: 5 }).unique().notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
