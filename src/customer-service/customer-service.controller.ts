@@ -14,6 +14,7 @@ import type { User } from '@/users/interfaces/user.interface';
 import { CustomerServiceService } from './customer-service.service';
 import { OperatorQueueQueryDto } from './dto/operator-queue-query.dto';
 import { CallNextDto } from './dto/call-next.dto';
+import type { CustomerServiceQueueResponse } from './dto/operator-queue-response.dto';
 
 type UserRequest = Request & { user: User };
 
@@ -24,7 +25,10 @@ export class CustomerServiceController {
   ) {}
 
   @Get('queue')
-  findQueue(@Query() query: OperatorQueueQueryDto, @Req() req: UserRequest) {
+  findQueue(
+    @Query() query: OperatorQueueQueryDto,
+    @Req() req: UserRequest,
+  ): Promise<CustomerServiceQueueResponse> {
     const { branchId, serviceId, page, limit, search } = query;
 
     return this.customerServiceService.findPendingTicketsByUserServiceWindow(

@@ -6,6 +6,10 @@ import { TicketsService } from '@/tickets/tickets.service';
 import { UsersService } from '@/users/users.service';
 import { WebsocketGateway } from '@/websocket/websocket.gateway';
 import {
+  CustomerServiceCalledTicket,
+  CustomerServiceQueueResponse,
+} from './dto/operator-queue-response.dto';
+import {
   Inject,
   Injectable,
   NotFoundException,
@@ -74,12 +78,47 @@ export class CustomerServiceService extends PaginationService {
     return bws.id;
   }
 
+  private async getLatestCalledTicketByScope(
+    userId: string,
+    branchId: string,
+    serviceId: string,
+  ): Promise<CustomerServiceCalledTicket | null> {
+    const calledTicket = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(schema.tickets.userId, userId),
+        eq(schema.tickets.branchId, branchId),
+        eq(schema.tickets.serviceId, serviceId),
+        eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
+      ),
+      columns: {
+        id: true,
+        code: true,
+        type: true,
+        status: true,
+        branchId: true,
+        serviceId: true,
+        userId: true,
+        branchWindowServiceId: true,
+        calledAt: true,
+        createdAt: true,
+      },
+      orderBy: (t, { desc }) => [
+        sql`${t.calledAt} DESC NULLS LAST`,
+        desc(t.createdAt),
+      ],
+    });
+
+    if (!calledTicket) return null;
+
+    return { ...calledTicket, status: 'LLAMADO' };
+  }
+
   async findPendingTicketsByUserServiceWindow(
     userId: string,
     branchId: string,
     serviceId: string,
     paginationDto: PaginationDto,
-  ) {
+  ): Promise<CustomerServiceQueueResponse> {
     const { page, limit } = this.validatePaginationParams(paginationDto);
     const { search } = paginationDto;
     const skip = this.calulateSkip(page, limit);
@@ -92,14 +131,17 @@ export class CustomerServiceService extends PaginationService {
     );
     await this.getBranchWindowServiceIdOrThrow(branchWindowId, serviceId);
 
-    const ticketInProgress = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(schema.tickets.userId, userId),
-        eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
-        isNull(schema.tickets.attentionFinishedAt),
-      ),
-      columns: { id: true },
-    });
+    const [ticketInProgress, calledTicket] = await Promise.all([
+      this.db.query.tickets.findFirst({
+        where: and(
+          eq(schema.tickets.userId, userId),
+          eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
+          isNull(schema.tickets.attentionFinishedAt),
+        ),
+        columns: { id: true },
+      }),
+      this.getLatestCalledTicketByScope(userId, branchId, serviceId),
+    ]);
 
     const searchFilter = search
       ? or(
@@ -146,7 +188,7 @@ export class CustomerServiceService extends PaginationService {
     ]);
 
     const meta = this.builPaginationMeta(total, page, limit, data.length);
-    return { data, meta, isAttendingTicket: !!ticketInProgress };
+    return { data, meta, isAttendingTicket: !!ticketInProgress, calledTicket };
   }
 
   async callNextTicket(branchId: string, serviceId: string, userId: string) {
