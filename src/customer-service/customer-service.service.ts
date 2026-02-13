@@ -2,6 +2,7 @@ import { DB_CONN } from '@/database/db.conn';
 import { schema } from '@/database/schema';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { PaginationService } from '@/pagination/pagination.service';
+import { PublicDisplayTicket, PublicService } from '@/public/public.service';
 import { TicketsService } from '@/tickets/tickets.service';
 import { UsersService } from '@/users/users.service';
 import { WebsocketGateway } from '@/websocket/websocket.gateway';
@@ -10,10 +11,10 @@ import {
   CustomerServiceQueueResponse,
 } from './dto/operator-queue-response.dto';
 import {
+  BadRequestException,
   Inject,
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { and, count, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -25,6 +26,13 @@ type TicketStatus =
   | 'FINALIZADO'
   | 'CANCELADO';
 
+type TicketEventName =
+  | 'ticket:called'
+  | 'ticket:recalled'
+  | 'ticket:started'
+  | 'ticket:finished'
+  | 'ticket:cancelled';
+
 @Injectable()
 export class CustomerServiceService extends PaginationService {
   constructor(
@@ -33,6 +41,7 @@ export class CustomerServiceService extends PaginationService {
     private readonly ticketsService: TicketsService,
     private readonly usersService: UsersService,
     private readonly websocketGateway: WebsocketGateway,
+    private readonly publicService: PublicService,
   ) {
     super();
   }
@@ -71,7 +80,7 @@ export class CustomerServiceService extends PaginationService {
 
     if (!bws) {
       throw new NotFoundException(
-        'Este servicio no está habilitado en tu ventanilla',
+        'Este servicio no esta habilitado en tu ventanilla',
       );
     }
 
@@ -111,6 +120,40 @@ export class CustomerServiceService extends PaginationService {
     if (!calledTicket) return null;
 
     return { ...calledTicket, status: 'LLAMADO' };
+  }
+
+  private async getDisplayTicketOrThrow(ticketId: string) {
+    const ticket = await this.publicService.getDisplayTicketById(ticketId);
+    if (!ticket) {
+      throw new NotFoundException(
+        'No se encontro el ticket para emitir el evento en tiempo real',
+      );
+    }
+
+    return ticket;
+  }
+
+  private emitTicketEvent(
+    event: TicketEventName,
+    ticket: PublicDisplayTicket,
+    emitUpdated = true,
+  ) {
+    const privateRoom = this.websocketGateway.getQueueRoom(
+      ticket.branchId,
+      ticket.serviceId,
+    );
+    const publicRoom = this.websocketGateway.getPublicRoom(
+      ticket.branchId,
+      ticket.serviceId,
+    );
+
+    this.websocketGateway.server.to(privateRoom).emit(event, ticket);
+    this.websocketGateway.server.to(publicRoom).emit(event, ticket);
+
+    if (!emitUpdated) return;
+
+    this.websocketGateway.server.to(privateRoom).emit('ticket:updated', ticket);
+    this.websocketGateway.server.to(publicRoom).emit('ticket:updated', ticket);
   }
 
   async findPendingTicketsByUserServiceWindow(
@@ -194,7 +237,7 @@ export class CustomerServiceService extends PaginationService {
   async callNextTicket(branchId: string, serviceId: string, userId: string) {
     await this.usersService.validatedUserId(userId);
 
-    return this.db.transaction(async (tx) => {
+    const called = await this.db.transaction(async (tx) => {
       const inProgress = await tx.query.tickets.findFirst({
         where: and(
           eq(schema.tickets.userId, userId),
@@ -206,7 +249,7 @@ export class CustomerServiceService extends PaginationService {
 
       if (inProgress) {
         throw new BadRequestException(
-          'No puedes llamar otro ticket mientras estás ATENDIENDO uno',
+          'No puedes llamar otro ticket mientras estas ATENDIENDO uno',
         );
       }
 
@@ -225,11 +268,12 @@ export class CustomerServiceService extends PaginationService {
         );
       }
 
-      const branchWindowId = branchWindow.branchWindowId;
-
       const bws = await tx.query.branchWindowServices.findFirst({
         where: and(
-          eq(schema.branchWindowServices.branchWindowId, branchWindowId),
+          eq(
+            schema.branchWindowServices.branchWindowId,
+            branchWindow.branchWindowId,
+          ),
           eq(schema.branchWindowServices.serviceId, serviceId),
           eq(schema.branchWindowServices.isActive, true),
         ),
@@ -238,7 +282,7 @@ export class CustomerServiceService extends PaginationService {
 
       if (!bws) {
         throw new NotFoundException(
-          'Este servicio no está habilitado en tu ventanilla',
+          'Este servicio no esta habilitado en tu ventanilla',
         );
       }
 
@@ -259,7 +303,7 @@ export class CustomerServiceService extends PaginationService {
 
       if (!next) return null;
 
-      const [called] = await tx
+      const [ticket] = await tx
         .update(schema.tickets)
         .set({
           status: 'LLAMADO' as TicketStatus,
@@ -289,24 +333,15 @@ export class CustomerServiceService extends PaginationService {
           createdAt: schema.tickets.createdAt,
         });
 
-      if (!called) return null;
-
-      // WebSocket: operador + público
-      const privateRoom = `queue:${branchId}:${serviceId}`;
-      const publicRoom = `public:queue:${branchId}:${serviceId}`;
-
-      this.websocketGateway.server
-        .to(privateRoom)
-        .emit('ticket:called', called);
-      this.websocketGateway.server.to(publicRoom).emit('ticket:called', {
-        id: called.id,
-        code: called.code,
-        type: called.type,
-        calledAt: called.calledAt,
-      });
-
-      return called;
+      return ticket ?? null;
     });
+
+    if (!called) return null;
+
+    const displayTicket = await this.getDisplayTicketOrThrow(called.id);
+    this.emitTicketEvent('ticket:called', displayTicket);
+
+    return called;
   }
 
   async recallTicket(ticketId: string, userId: string) {
@@ -349,28 +384,9 @@ export class CustomerServiceService extends PaginationService {
       );
     }
 
-    const privateRoom = `queue:${recalled.branchId}:${recalled.serviceId}`;
-    const publicRoom = `public:queue:${recalled.branchId}:${recalled.serviceId}`;
-
-    this.websocketGateway.server
-      .to(privateRoom)
-      .emit('ticket:called', recalled);
-    this.websocketGateway.server.to(publicRoom).emit('ticket:called', {
-      id: recalled.id,
-      code: recalled.code,
-      type: recalled.type,
-      calledAt: recalled.calledAt,
-    });
-
-    this.websocketGateway.server
-      .to(privateRoom)
-      .emit('ticket:recalled', recalled);
-    this.websocketGateway.server.to(publicRoom).emit('ticket:recalled', {
-      id: recalled.id,
-      code: recalled.code,
-      type: recalled.type,
-      calledAt: recalled.calledAt,
-    });
+    const displayTicket = await this.getDisplayTicketOrThrow(recalled.id);
+    this.emitTicketEvent('ticket:called', displayTicket, false);
+    this.emitTicketEvent('ticket:recalled', displayTicket);
 
     return {
       message: `Ticket "${recalled.code}" re-llamado correctamente`,
@@ -384,7 +400,6 @@ export class CustomerServiceService extends PaginationService {
       this.usersService.validatedUserId(userId),
     ]);
 
-    // Regla banco: si ya atiende uno, no puede iniciar otro
     const inProgress = await this.db.query.tickets.findFirst({
       where: and(
         eq(schema.tickets.userId, userId),
@@ -395,7 +410,7 @@ export class CustomerServiceService extends PaginationService {
     });
 
     if (inProgress && inProgress.id !== ticketId) {
-      throw new BadRequestException('Ya estás ATENDIENDO un ticket');
+      throw new BadRequestException('Ya estas ATENDIENDO un ticket');
     }
 
     const [started] = await this.db
@@ -416,32 +431,19 @@ export class CustomerServiceService extends PaginationService {
       .returning({
         id: schema.tickets.id,
         code: schema.tickets.code,
-        branchId: schema.tickets.branchId,
-        serviceId: schema.tickets.serviceId,
-        userId: schema.tickets.userId,
-        branchWindowServiceId: schema.tickets.branchWindowServiceId,
-        attentionStartedAt: schema.tickets.attentionStartedAt,
       });
 
     if (!started) {
       throw new NotFoundException(
-        'No se puede iniciar: ticket no está LLAMADO o no pertenece al usuario',
+        'No se puede iniciar: ticket no esta LLAMADO o no pertenece al usuario',
       );
     }
 
-    const privateRoom = `queue:${started.branchId}:${started.serviceId}`;
-    const publicRoom = `public:queue:${started.branchId}:${started.serviceId}`;
-
-    this.websocketGateway.server
-      .to(privateRoom)
-      .emit('ticket:started', started);
-    this.websocketGateway.server.to(publicRoom).emit('ticket:started', {
-      id: started.id,
-      code: started.code,
-    });
+    const displayTicket = await this.getDisplayTicketOrThrow(started.id);
+    this.emitTicketEvent('ticket:started', displayTicket);
 
     return {
-      message: `Atención del ticket "${started.code}" iniciada correctamente`,
+      message: `Atencion del ticket "${started.code}" iniciada correctamente`,
     };
   }
 
@@ -469,32 +471,19 @@ export class CustomerServiceService extends PaginationService {
       .returning({
         id: schema.tickets.id,
         code: schema.tickets.code,
-        branchId: schema.tickets.branchId,
-        serviceId: schema.tickets.serviceId,
-        userId: schema.tickets.userId,
-        branchWindowServiceId: schema.tickets.branchWindowServiceId,
-        attentionFinishedAt: schema.tickets.attentionFinishedAt,
       });
 
     if (!finished) {
       throw new NotFoundException(
-        'No se pudo finalizar: no está ATENDIENDO por este usuario',
+        'No se pudo finalizar: no esta ATENDIENDO por este usuario',
       );
     }
 
-    const privateRoom = `queue:${finished.branchId}:${finished.serviceId}`;
-    const publicRoom = `public:queue:${finished.branchId}:${finished.serviceId}`;
-
-    this.websocketGateway.server
-      .to(privateRoom)
-      .emit('ticket:finished', finished);
-    this.websocketGateway.server.to(publicRoom).emit('ticket:finished', {
-      id: finished.id,
-      code: finished.code,
-    });
+    const displayTicket = await this.getDisplayTicketOrThrow(finished.id);
+    this.emitTicketEvent('ticket:finished', displayTicket);
 
     return {
-      message: `Atención del ticket "${finished.code}" finalizada correctamente`,
+      message: `Atencion del ticket "${finished.code}" finalizada correctamente`,
     };
   }
 
@@ -525,27 +514,16 @@ export class CustomerServiceService extends PaginationService {
       .returning({
         id: schema.tickets.id,
         code: schema.tickets.code,
-        branchId: schema.tickets.branchId,
-        serviceId: schema.tickets.serviceId,
-        status: schema.tickets.status,
       });
 
     if (!cancelled) {
       throw new BadRequestException(
-        'No se puede cancelar: el ticket ya está en atención o finalizado',
+        'No se puede cancelar: el ticket ya esta en atencion o finalizado',
       );
     }
 
-    const privateRoom = `queue:${cancelled.branchId}:${cancelled.serviceId}`;
-    const publicRoom = `public:queue:${cancelled.branchId}:${cancelled.serviceId}`;
-
-    this.websocketGateway.server
-      .to(privateRoom)
-      .emit('ticket:cancelled', cancelled);
-    this.websocketGateway.server.to(publicRoom).emit('ticket:cancelled', {
-      id: cancelled.id,
-      code: cancelled.code,
-    });
+    const displayTicket = await this.getDisplayTicketOrThrow(cancelled.id);
+    this.emitTicketEvent('ticket:cancelled', displayTicket);
 
     return { message: `Ticket "${cancelled.code}" cancelado` };
   }

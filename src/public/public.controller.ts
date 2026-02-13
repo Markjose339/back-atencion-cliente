@@ -1,6 +1,7 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { PublicService } from './public.service';
 import { Public } from '@/auth/decorators/public.decorator';
+import { DisplayCallsQueryDto } from './dto/display-calls-query.dto';
 
 @Controller('public')
 export class PublicController {
@@ -16,5 +17,11 @@ export class PublicController {
   @Public()
   getServicesByBranch(@Param('branchId') branchId: string) {
     return this.publicService.getServicesByBranch(branchId);
+  }
+
+  @Get('display/calls')
+  @Public()
+  getDisplayCalls(@Query() query: DisplayCallsQueryDto) {
+    return this.publicService.getDisplayCalls(query.branchId, query.serviceIds);
   }
 }

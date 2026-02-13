@@ -64,12 +64,18 @@ export class TicketsService {
           createdAt: schema.tickets.createdAt,
         });
 
-      const privateRoom = `queue:${dto.branchId}:${dto.serviceId}`;
+      const privateRoom = this.websocketGateway.getQueueRoom(
+        dto.branchId,
+        dto.serviceId,
+      );
       this.websocketGateway.server
         .to(privateRoom)
         .emit('ticket:created', ticket);
 
-      const publicRoom = `public:queue:${dto.branchId}:${dto.serviceId}`;
+      const publicRoom = this.websocketGateway.getPublicRoom(
+        dto.branchId,
+        dto.serviceId,
+      );
       this.websocketGateway.server.to(publicRoom).emit('ticket:created', {
         id: ticket.id,
         code: ticket.code,

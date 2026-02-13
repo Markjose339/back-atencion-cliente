@@ -5,9 +5,16 @@ import { DatabaseModule } from '@/database/database.module';
 import { TicketsModule } from '@/tickets/tickets.module';
 import { UsersModule } from '@/users/users.module';
 import { WebsocketModule } from '@/websocket/websocket.module';
+import { PublicModule } from '@/public/public.module';
 
 @Module({
-  imports: [DatabaseModule, TicketsModule, UsersModule, WebsocketModule],
+  imports: [
+    DatabaseModule,
+    TicketsModule,
+    UsersModule,
+    WebsocketModule,
+    PublicModule,
+  ],
   controllers: [CustomerServiceController],
   providers: [CustomerServiceService],
 })

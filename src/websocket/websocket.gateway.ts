@@ -1,18 +1,18 @@
 import { DB_CONN } from '@/database/db.conn';
 import { schema } from '@/database/schema';
 import {
-  WebSocketGateway,
-  WebSocketServer,
+  ConnectedSocket,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
-  MessageBody,
-  ConnectedSocket,
+  WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Inject } from '@nestjs/common';
+import { and, eq, inArray } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Server, Socket } from 'socket.io';
-import { eq, and, inArray } from 'drizzle-orm';
 import { AuthService } from '@/auth/auth.service';
 import type { User } from '@/users/interfaces/user.interface';
 
@@ -34,14 +34,18 @@ type AuthReadyPayload = {
   userId: string;
 };
 
+type PublicJoinAck =
+  | { ok: true; room: string }
+  | { ok: false; message: string };
+
 type ServerToClientEvents = {
   'auth:ready': (payload: AuthReadyPayload) => void;
 };
 
 type AuthedSocket = Socket<
-  Record<string, never>, // ClientToServerEvents (no tipado por ahora)
-  ServerToClientEvents, // ✅ ServerToClientEvents
-  Record<string, never>, // InterServerEvents
+  Record<string, never>,
+  ServerToClientEvents,
+  Record<string, never>,
   SocketData
 >;
 
@@ -65,7 +69,7 @@ export class WebsocketGateway
   ) {}
 
   async handleConnection(client: AuthedSocket) {
-    console.log(`✅ Cliente conectado: ${client.id}`);
+    console.log(`Cliente conectado: ${client.id}`);
 
     const token = this.getAccessTokenFromSocket(client);
     if (!token) return;
@@ -79,30 +83,35 @@ export class WebsocketGateway
     if (!user) return;
 
     client.data.user = user;
-
-    console.log(`🔐 Socket autenticado: ${client.id} user=${user.id}`);
+    console.log(`Socket autenticado: ${client.id} user=${user.id}`);
 
     await client.join(`user:${user.id}`);
-
-    // ✅ IMPORTANTE: avisa al frontend que ya está listo para queue:register
-    const ready: AuthReadyPayload = { ok: true, userId: user.id };
-    client.emit('auth:ready', ready);
+    client.emit('auth:ready', { ok: true, userId: user.id });
   }
 
   handleDisconnect(client: AuthedSocket) {
-    console.log(`❌ Cliente desconectado: ${client.id}`);
+    console.log(`Cliente desconectado: ${client.id}`);
   }
 
   @SubscribeMessage('public:join')
   async publicJoin(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() body: unknown,
-  ) {
+  ): Promise<PublicJoinAck> {
     const data = this.parseQueueJoinBody(body);
-    if (!data) return { ok: false, message: 'Datos incompletos' };
+    if (!data) {
+      return { ok: false, message: 'branchId y serviceId son requeridos' };
+    }
 
-    // Banco PRO: público por sucursal+servicio (sin ventanilla)
-    const room = `public:queue:${data.branchId}:${data.serviceId}`;
+    const validationMessage = await this.validatePublicScope(
+      data.branchId,
+      data.serviceId,
+    );
+    if (validationMessage) {
+      return { ok: false, message: validationMessage };
+    }
+
+    const room = this.getPublicRoom(data.branchId, data.serviceId);
     await client.join(room);
 
     return { ok: true, room };
@@ -111,8 +120,6 @@ export class WebsocketGateway
   @SubscribeMessage('queue:register')
   async registerQueues(@ConnectedSocket() client: AuthedSocket) {
     const user = client.data.user;
-
-    // ✅ Nunca usar throw en eventos con ACK
     if (!user) return { ok: false, message: 'No autenticado' };
 
     const userBWs = await this.db.query.userBranchWindows.findMany({
@@ -123,16 +130,11 @@ export class WebsocketGateway
       columns: { branchId: true, branchWindowId: true },
     });
 
-    console.log('🔎 userBWs:', user.id, userBWs);
-
     if (userBWs.length === 0) {
-      console.log('⚠️ queue:register -> sin userBranchWindows activos');
       return { ok: true, rooms: [] };
     }
 
     const branchWindowIds = userBWs.map((r) => r.branchWindowId);
-
-    // servicios habilitados en esas ventanillas
     const services = await this.db.query.branchWindowServices.findMany({
       where: and(
         inArray(schema.branchWindowServices.branchWindowId, branchWindowIds),
@@ -141,8 +143,6 @@ export class WebsocketGateway
       columns: { branchWindowId: true, serviceId: true },
     });
 
-    console.log('🔎 services:', services);
-
     const bwToBranch = new Map<string, string>();
     for (const r of userBWs) bwToBranch.set(r.branchWindowId, r.branchId);
 
@@ -150,13 +150,11 @@ export class WebsocketGateway
     for (const s of services) {
       const branchId = bwToBranch.get(s.branchWindowId);
       if (!branchId) continue;
-      roomSet.add(`queue:${branchId}:${s.serviceId}`);
+      roomSet.add(this.getQueueRoom(branchId, s.serviceId));
     }
 
     const rooms = Array.from(roomSet);
     for (const room of rooms) await client.join(room);
-
-    console.log('✅ rooms after queue:register:', Array.from(client.rooms));
 
     return { ok: true, rooms };
   }
@@ -167,8 +165,6 @@ export class WebsocketGateway
     @MessageBody() body: unknown,
   ) {
     const user = client.data.user;
-
-    // ✅ nunca throw con ACK
     if (!user) return { ok: false, message: 'No autenticado' };
 
     const data = this.parseQueueJoinBody(body);
@@ -187,7 +183,6 @@ export class WebsocketGateway
       return { ok: false, message: 'No tienes acceso a esa sucursal' };
     }
 
-    // validar que esa ventanilla tenga habilitado el servicio
     const allowed = await this.db.query.branchWindowServices.findFirst({
       where: and(
         eq(schema.branchWindowServices.branchWindowId, ubw.branchWindowId),
@@ -201,10 +196,18 @@ export class WebsocketGateway
       return { ok: false, message: 'No tienes acceso a esa cola' };
     }
 
-    const room = `queue:${data.branchId}:${data.serviceId}`;
+    const room = this.getQueueRoom(data.branchId, data.serviceId);
     await client.join(room);
 
     return { ok: true, room };
+  }
+
+  getQueueRoom(branchId: string, serviceId: string) {
+    return `queue:${branchId}:${serviceId}`;
+  }
+
+  getPublicRoom(branchId: string, serviceId: string) {
+    return `public:branch:${branchId}:service:${serviceId}`;
   }
 
   private getAccessTokenFromSocket(client: AuthedSocket): string | null {
@@ -258,5 +261,53 @@ export class WebsocketGateway
 
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
+  }
+
+  private async validatePublicScope(
+    branchId: string,
+    serviceId: string,
+  ): Promise<string | null> {
+    const [branch, service] = await Promise.all([
+      this.db.query.branches.findFirst({
+        where: and(
+          eq(schema.branches.id, branchId),
+          eq(schema.branches.isActive, true),
+        ),
+        columns: { id: true },
+      }),
+      this.db.query.services.findFirst({
+        where: and(
+          eq(schema.services.id, serviceId),
+          eq(schema.services.isActive, true),
+        ),
+        columns: { id: true },
+      }),
+    ]);
+
+    if (!branch) return 'La sucursal no existe o esta inactiva';
+    if (!service) return 'El servicio no existe o esta inactivo';
+
+    const availableInBranch = await this.db
+      .select({ id: schema.branchWindowServices.id })
+      .from(schema.branchWindowServices)
+      .innerJoin(
+        schema.branchWindows,
+        eq(schema.branchWindowServices.branchWindowId, schema.branchWindows.id),
+      )
+      .where(
+        and(
+          eq(schema.branchWindows.branchId, branchId),
+          eq(schema.branchWindows.isActive, true),
+          eq(schema.branchWindowServices.serviceId, serviceId),
+          eq(schema.branchWindowServices.isActive, true),
+        ),
+      )
+      .limit(1);
+
+    if (availableInBranch.length === 0) {
+      return 'El servicio no esta habilitado para esta sucursal';
+    }
+
+    return null;
   }
 }
