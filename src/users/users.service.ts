@@ -8,12 +8,11 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { schema } from '@/database/schema';
-import { count, eq, ilike, ne, or } from 'drizzle-orm';
+import { and, count, eq, ilike, ne, or, sql } from 'drizzle-orm';
 import * as argon2 from 'argon2';
 import { DB_CONN } from '@/database/db.conn';
 import { PaginationService } from '@/pagination/pagination.service';
 import { RolesService } from '@/roles/roles.service';
-import { and } from 'drizzle-orm';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 
 @Injectable()
@@ -155,7 +154,7 @@ export class UsersService extends PaginationService {
       if (Object.keys(updateData).length > 0) {
         await tx
           .update(schema.users)
-          .set(updateData)
+          .set({ ...updateData, updatedAt: sql`now()` })
           .where(eq(schema.users.id, id));
       }
 

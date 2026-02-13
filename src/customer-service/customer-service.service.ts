@@ -221,10 +221,10 @@ export class CustomerServiceService extends PaginationService {
         .update(schema.tickets)
         .set({
           status: 'LLAMADO' as TicketStatus,
-          calledAt: new Date(),
+          calledAt: sql`now()`,
+          updatedAt: sql`now()`,
           userId,
           branchWindowServiceId: bws.id,
-          updatedAt: new Date(),
         })
         .where(
           and(
@@ -276,8 +276,8 @@ export class CustomerServiceService extends PaginationService {
     const [recalled] = await this.db
       .update(schema.tickets)
       .set({
-        calledAt: new Date(),
-        updatedAt: new Date(),
+        calledAt: sql`now()`,
+        updatedAt: sql`now()`,
       })
       .where(
         and(
@@ -360,8 +360,8 @@ export class CustomerServiceService extends PaginationService {
       .update(schema.tickets)
       .set({
         status: 'ATENDIENDO' as TicketStatus,
-        attentionStartedAt: new Date(),
-        updatedAt: new Date(),
+        attentionStartedAt: sql`now()`,
+        updatedAt: sql`now()`,
       })
       .where(
         and(
@@ -413,8 +413,8 @@ export class CustomerServiceService extends PaginationService {
       .update(schema.tickets)
       .set({
         status: 'FINALIZADO' as TicketStatus,
-        attentionFinishedAt: new Date(),
-        updatedAt: new Date(),
+        attentionFinishedAt: sql`now()`,
+        updatedAt: sql`now()`,
       })
       .where(
         and(
@@ -467,8 +467,8 @@ export class CustomerServiceService extends PaginationService {
       .update(schema.tickets)
       .set({
         status: 'CANCELADO' as TicketStatus,
-        cancelledAt: new Date(),
-        updatedAt: new Date(),
+        cancelledAt: sql`now()`,
+        updatedAt: sql`now()`,
       })
       .where(
         and(

@@ -28,9 +28,13 @@ export const sessions = pgTable(
     refreshToken: text('refresh_token').unique(),
 
     status: sessionStatusEnum('status').default('active').notNull(),
-    lastActivity: timestamp('last_activity').defaultNow().notNull(),
-    expiresAt: timestamp('expires_at').notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    lastActivity: timestamp('last_activity', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index('session_user_id_idx').on(t.userId),

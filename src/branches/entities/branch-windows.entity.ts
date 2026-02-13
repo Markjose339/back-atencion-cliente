@@ -25,7 +25,9 @@ export const branchWindows = pgTable(
       .notNull()
       .references(() => windows.id),
     isActive: boolean('is_active').default(true).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex('branch_windows_branch_window_uq').on(t.branchId, t.windowId),

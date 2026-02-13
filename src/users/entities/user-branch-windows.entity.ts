@@ -28,7 +28,9 @@ export const userBranchWindows = pgTable(
       .notNull()
       .references(() => branches.id, { onDelete: 'cascade' }),
     isActive: boolean('is_active').default(true).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex('ubw_user_branchWindow_uq').on(t.userId, t.branchWindowId),

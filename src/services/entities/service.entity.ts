@@ -22,10 +22,11 @@ export const services = pgTable(
     code: varchar('code', { length: 5 }).unique().notNull(),
     isActive: boolean('is_active').default(true).notNull(),
 
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
-      .$onUpdate(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
       .notNull(),
   },
   (t) => [

@@ -11,7 +11,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { schema } from '@/database/schema';
 import { PaginationService } from '@/pagination/pagination.service';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
-import { and, count, eq, ilike, ne, or } from 'drizzle-orm';
+import { and, count, eq, ilike, ne, or, sql } from 'drizzle-orm';
 
 @Injectable()
 export class ServicesService extends PaginationService {
@@ -97,7 +97,7 @@ export class ServicesService extends PaginationService {
 
     const [service] = await this.db
       .update(schema.services)
-      .set(updateServiceDto)
+      .set({ ...updateServiceDto, updatedAt: sql`now()` })
       .where(eq(schema.services.id, id))
       .returning({
         id: schema.services.id,

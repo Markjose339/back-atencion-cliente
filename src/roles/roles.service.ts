@@ -11,7 +11,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PermissionsService } from '@/permissions/permissions.service';
 import { DB_CONN } from '@/database/db.conn';
 import { schema } from '@/database/schema';
-import { and, count, eq, ilike, inArray, ne, or } from 'drizzle-orm';
+import { and, count, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import { PaginationService } from '@/pagination/pagination.service';
 
 @Injectable()
@@ -126,7 +126,7 @@ export class RolesService extends PaginationService {
       if (name) {
         await tx
           .update(schema.roles)
-          .set({ name })
+          .set({ name, updatedAt: sql`now()` })
           .where(eq(schema.roles.id, id));
       }
 

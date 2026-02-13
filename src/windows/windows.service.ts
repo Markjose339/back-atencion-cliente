@@ -11,7 +11,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { schema } from '@/database/schema';
 import { PaginationService } from '@/pagination/pagination.service';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
-import { and, count, eq, ilike, ne, or } from 'drizzle-orm';
+import { and, count, eq, ilike, ne, or, sql } from 'drizzle-orm';
 
 @Injectable()
 export class WindowsService extends PaginationService {
@@ -95,7 +95,7 @@ export class WindowsService extends PaginationService {
 
     const [window] = await this.db
       .update(schema.windows)
-      .set(updateWindowDto)
+      .set({ ...updateWindowDto, updatedAt: sql`now()` })
       .where(eq(schema.windows.id, id))
       .returning({
         id: schema.windows.id,

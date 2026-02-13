@@ -10,7 +10,7 @@ import { PaginationService } from '@/pagination/pagination.service';
 import { DB_CONN } from '@/database/db.conn';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { schema } from '@/database/schema';
-import { and, count, eq, ilike, inArray, ne, or } from 'drizzle-orm';
+import { and, count, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 
 @Injectable()
@@ -87,7 +87,7 @@ export class PermissionsService extends PaginationService {
 
     const [permission] = await this.db
       .update(schema.permissions)
-      .set(updatePermissionDto)
+      .set({ ...updatePermissionDto, updatedAt: sql`now()` })
       .where(eq(schema.permissions.id, id))
       .returning({
         id: schema.permissions.id,

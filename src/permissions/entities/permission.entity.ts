@@ -11,10 +11,11 @@ export const permissions = pgTable(
       .$defaultFn(() => createId()),
     name: varchar('name', { length: 25 }).unique().notNull(),
 
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
-      .$onUpdate(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
       .notNull(),
   },
   (t) => [index('permissions_name_idx').on(t.name)],

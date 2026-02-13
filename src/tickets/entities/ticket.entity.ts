@@ -53,15 +53,20 @@ export const tickets = pgTable(
       onDelete: 'set null',
     }),
 
-    calledAt: timestamp('called_at'),
-    attentionStartedAt: timestamp('attention_started_at'),
-    attentionFinishedAt: timestamp('attention_finished_at'),
-    cancelledAt: timestamp('cancelled_at'),
+    calledAt: timestamp('called_at', { withTimezone: true }),
+    attentionStartedAt: timestamp('attention_started_at', {
+      withTimezone: true,
+    }),
+    attentionFinishedAt: timestamp('attention_finished_at', {
+      withTimezone: true,
+    }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
 
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
-      .$onUpdate(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
       .notNull(),
   },
   (t) => [

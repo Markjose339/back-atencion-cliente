@@ -23,10 +23,11 @@ export const users = pgTable(
     address: varchar('address', { length: 255 }),
     phone: varchar('phone', { length: 15 }),
     isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
-      .$onUpdate(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
       .notNull(),
   },
   (t) => [

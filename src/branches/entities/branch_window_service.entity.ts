@@ -30,7 +30,9 @@ export const branchWindowServices = pgTable(
     priority: integer('priority').default(0).notNull(),
     isActive: boolean('is_active').default(true).notNull(),
 
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex('bws_branchwindow_service_uq').on(
