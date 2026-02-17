@@ -3,45 +3,11 @@ import { schema } from '@/database/schema';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-
-type TicketStatus =
-  | 'PENDIENTE'
-  | 'LLAMADO'
-  | 'ATENDIENDO'
-  | 'FINALIZADO'
-  | 'CANCELADO';
-
-type DisplayTicketRow = {
-  id: string;
-  code: string;
-  type: 'REGULAR' | 'PREFERENCIAL';
-  status: TicketStatus;
-  branchId: string;
-  branchName: string;
-  serviceId: string;
-  serviceName: string;
-  serviceCode: string;
-  windowId: string | null;
-  windowName: string | null;
-  calledAt: Date | null;
-  createdAt: Date;
-};
-
-export type PublicDisplayTicket = {
-  id: string;
-  code: string;
-  type: 'REGULAR' | 'PREFERENCIAL';
-  status: TicketStatus;
-  branchId: string;
-  branchName: string;
-  serviceId: string;
-  serviceName: string;
-  serviceCode: string;
-  windowId: string;
-  windowName: string;
-  calledAt: Date | null;
-  createdAt: Date;
-};
+import {
+  DisplayTicketRow,
+  PublicDisplayTicket,
+  TicketStatus,
+} from './interfaces/public.interface';
 
 @Injectable()
 export class PublicService {

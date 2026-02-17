@@ -20,7 +20,6 @@ import { UpdateOperatorAssignmentDto } from './dto/update-operator-assignment.dt
 export class AssignmentsController {
   constructor(private readonly assignmentsService: AssignmentsService) {}
 
-  // -------- A) Servicios habilitados por ventanilla (branch_window_services) --------
   @Post('window-services')
   createWindowService(@Body() dto: CreateWindowServiceDto) {
     return this.assignmentsService.createWindowService(dto);

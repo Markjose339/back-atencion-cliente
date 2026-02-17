@@ -26,13 +26,6 @@ export class AssignmentsService extends PaginationService {
     super();
   }
 
-  // =========================
-  // Helpers
-  // =========================
-
-  /**
-   * Garantiza que exista branch_windows para (branchId, windowId) y retorna branchWindowId.
-   */
   private async ensureBranchWindow(branchId: string, windowId: string) {
     const existing = await this.db.query.branchWindows.findFirst({
       where: and(
@@ -51,10 +44,6 @@ export class AssignmentsService extends PaginationService {
 
     return created.id;
   }
-
-  // =========================
-  // A) WINDOW SERVICES (branch_window_services)
-  // =========================
 
   async createWindowService(dto: CreateWindowServiceDto) {
     const branchWindowId = await this.ensureBranchWindow(
@@ -211,17 +200,12 @@ export class AssignmentsService extends PaginationService {
     return row;
   }
 
-  // =========================
-  // B) OPERATORS (user_branch_windows) - Opción B
-  // =========================
-
   async createOperatorAssignment(dto: CreateOperatorAssignmentDto) {
     const branchWindowId = await this.ensureBranchWindow(
       dto.branchId,
       dto.windowId,
     );
 
-    // Opción B: unique(userId, branchId) => 1 ventanilla por sucursal
     const exists = await this.db.query.userBranchWindows.findFirst({
       where: and(
         eq(schema.userBranchWindows.userId, dto.userId),
@@ -308,7 +292,7 @@ export class AssignmentsService extends PaginationService {
       columns: { id: true, isActive: true },
       with: {
         user: { columns: { id: true, name: true, email: true } },
-        branch: { columns: { id: true, name: true } }, // ✅ requiere relation branch
+        branch: { columns: { id: true, name: true } },
         branchWindow: {
           columns: { id: true },
           with: {

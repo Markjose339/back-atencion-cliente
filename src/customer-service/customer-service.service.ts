@@ -2,7 +2,7 @@ import { DB_CONN } from '@/database/db.conn';
 import { schema } from '@/database/schema';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { PaginationService } from '@/pagination/pagination.service';
-import { PublicDisplayTicket, PublicService } from '@/public/public.service';
+import { PublicService } from '@/public/public.service';
 import { TicketsService } from '@/tickets/tickets.service';
 import { UsersService } from '@/users/users.service';
 import { WebsocketGateway } from '@/websocket/websocket.gateway';
@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { and, count, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { PublicDisplayTicket } from '@/public/interfaces/public.interface';
 
 type TicketStatus =
   | 'PENDIENTE'
