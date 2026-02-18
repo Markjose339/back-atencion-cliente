@@ -3,6 +3,7 @@
 /node_modules
 /build
 /drizzle
+/uploads
 
 # Logs
 logs
