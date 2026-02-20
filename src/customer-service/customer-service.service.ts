@@ -12,6 +12,7 @@ import {
 } from './dto/operator-queue-response.dto';
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -334,7 +335,13 @@ export class CustomerServiceService extends PaginationService {
           createdAt: schema.tickets.createdAt,
         });
 
-      return ticket ?? null;
+      if (!ticket) {
+        throw new ConflictException(
+          'Ese ticket ya ha sido llamado por otra ventanilla',
+        );
+      }
+
+      return ticket;
     });
 
     if (!called) return null;

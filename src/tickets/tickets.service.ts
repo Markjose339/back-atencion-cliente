@@ -24,6 +24,17 @@ export class TicketsService {
     const lockKey = this.getLockKey(dto.type, dto.branchId);
 
     return this.db.transaction(async (tx) => {
+      const branch = await tx.query.branches.findFirst({
+        where: eq(schema.branches.id, dto.branchId),
+        columns: { name: true },
+      });
+
+      if (!branch) {
+        throw new NotFoundException(
+          `Sucursal con id ${dto.branchId} no encontrada`,
+        );
+      }
+
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
 
       const lastTicket = await tx.query.tickets.findFirst({
@@ -59,8 +70,6 @@ export class TicketsService {
           packageCode: schema.tickets.packageCode,
           type: schema.tickets.type,
           status: schema.tickets.status,
-          branchId: schema.tickets.branchId,
-          serviceId: schema.tickets.serviceId,
           createdAt: schema.tickets.createdAt,
         });
 
@@ -84,7 +93,10 @@ export class TicketsService {
         createdAt: ticket.createdAt,
       });
 
-      return ticket;
+      return {
+        ...ticket,
+        branchName: branch.name,
+      };
     });
   }
 
