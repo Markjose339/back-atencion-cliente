@@ -23,14 +23,10 @@ type UserRequest = Request & { user: User };
 
 @Controller('auth')
 export class AuthController {
-  private readonly isProduction: boolean;
-
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-  ) {
-    this.isProduction = this.configService.get('NODE_ENV') === 'production';
-  }
+  ) {}
 
   @Post('login')
   @Public()
@@ -86,7 +82,7 @@ export class AuthController {
 
   private baseCookieOptions(): CookieOptions {
     return {
-      secure: this.isProduction,
+      secure: false,
       sameSite: 'lax',
       path: '/',
     };

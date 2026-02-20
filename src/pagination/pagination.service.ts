@@ -3,7 +3,7 @@ import { PaginationMeta } from './interfaces/pagination.interface';
 
 @Injectable()
 export class PaginationService {
-  builPaginationMeta(
+  buildPaginationMeta(
     total: number,
     page: number,
     limit: number,
@@ -25,8 +25,22 @@ export class PaginationService {
       to: skip + dataLength,
     };
   }
-  calulateSkip(page: number, limit: number): number {
+
+  builPaginationMeta(
+    total: number,
+    page: number,
+    limit: number,
+    dataLength: number,
+  ): PaginationMeta {
+    return this.buildPaginationMeta(total, page, limit, dataLength);
+  }
+
+  calculateSkip(page: number, limit: number): number {
     return (page - 1) * limit;
+  }
+
+  calulateSkip(page: number, limit: number): number {
+    return this.calculateSkip(page, limit);
   }
 
   validatePaginationParams(params: { page?: number; limit?: number }): {

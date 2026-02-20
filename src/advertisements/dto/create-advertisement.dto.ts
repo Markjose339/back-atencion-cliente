@@ -22,27 +22,27 @@ import {
 } from './transformers';
 
 export class CreateAdvertisementDto {
-  @IsNotEmpty({ message: 'El tÃ­tulo es obligatorio' })
-  @IsString({ message: 'El tÃ­tulo debe ser texto' })
-  @MaxLength(120, { message: 'El tÃ­tulo no puede exceder 120 caracteres' })
+  @IsNotEmpty({ message: 'El titulo es obligatorio' })
+  @IsString({ message: 'El titulo debe ser texto' })
+  @MaxLength(120, { message: 'El titulo no puede exceder 120 caracteres' })
   title: string;
 
   @IsOptional()
-  @IsString({ message: 'La descripciÃ³n debe ser texto' })
+  @IsString({ message: 'La descripcion debe ser texto' })
   @MaxLength(300, {
-    message: 'La descripciÃ³n no puede exceder 300 caracteres',
+    message: 'La descripcion no puede exceder 300 caracteres',
   })
   description?: string;
 
   @IsOptional()
   @IsIn(ADVERTISEMENT_DISPLAY_MODES, {
-    message: `displayMode invÃ¡lido. Valores permitidos: ${ADVERTISEMENT_DISPLAY_MODES.join(', ')}`,
+    message: `displayMode invalido. Valores permitidos: ${ADVERTISEMENT_DISPLAY_MODES.join(', ')}`,
   })
   displayMode?: (typeof ADVERTISEMENT_DISPLAY_MODES)[number];
 
   @IsOptional()
   @IsIn(ADVERTISEMENT_TRANSITIONS, {
-    message: `transition invÃ¡lida. Valores permitidos: ${ADVERTISEMENT_TRANSITIONS.join(', ')}`,
+    message: `transition invalida. Valores permitidos: ${ADVERTISEMENT_TRANSITIONS.join(', ')}`,
   })
   transition?: (typeof ADVERTISEMENT_TRANSITIONS)[number];
 
@@ -66,11 +66,11 @@ export class CreateAdvertisementDto {
 
   @IsOptional()
   @Transform(toOptionalDateOrNull)
-  @IsDate({ message: 'startsAt debe ser una fecha vÃ¡lida' })
+  @IsDate({ message: 'startsAt debe ser una fecha valida' })
   startsAt?: Date | null;
 
   @IsOptional()
   @Transform(toOptionalDateOrNull)
-  @IsDate({ message: 'endsAt debe ser una fecha vÃ¡lida' })
+  @IsDate({ message: 'endsAt debe ser una fecha valida' })
   endsAt?: Date | null;
 }

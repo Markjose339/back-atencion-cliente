@@ -10,13 +10,13 @@ import { toOptionalBoolean } from './transformers';
 export class FindAdvertisementsQueryDto extends PaginationDto {
   @IsOptional()
   @IsIn(ADVERTISEMENT_MEDIA_TYPES, {
-    message: `mediaType invÃ¡lido. Valores permitidos: ${ADVERTISEMENT_MEDIA_TYPES.join(', ')}`,
+    message: `mediaType invalido. Valores permitidos: ${ADVERTISEMENT_MEDIA_TYPES.join(', ')}`,
   })
   mediaType?: (typeof ADVERTISEMENT_MEDIA_TYPES)[number];
 
   @IsOptional()
   @IsIn(ADVERTISEMENT_DISPLAY_MODES, {
-    message: `displayMode invÃ¡lido. Valores permitidos: ${ADVERTISEMENT_DISPLAY_MODES.join(', ')}`,
+    message: `displayMode invalido. Valores permitidos: ${ADVERTISEMENT_DISPLAY_MODES.join(', ')}`,
   })
   displayMode?: (typeof ADVERTISEMENT_DISPLAY_MODES)[number];
 

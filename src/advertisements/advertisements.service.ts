@@ -40,6 +40,7 @@ import {
 import { CreateAdvertisementDto } from './dto/create-advertisement.dto';
 import { FindAdvertisementsQueryDto } from './dto/find-advertisements-query.dto';
 import { UpdateAdvertisementDto } from './dto/update-advertisement.dto';
+import type { AdvertisementUploadFile } from './interfaces/advertisement-upload-file.interface';
 import { AdvertisementResponse } from './interfaces/advertisement.interface';
 
 type AdvertisementRow = typeof schema.advertisements.$inferSelect;
@@ -57,7 +58,7 @@ export class AdvertisementsService extends PaginationService {
 
   async create(
     createAdvertisementDto: CreateAdvertisementDto,
-    file?: Express.Multer.File,
+    file?: AdvertisementUploadFile,
   ): Promise<AdvertisementResponse> {
     if (!file) {
       throw new BadRequestException('Debe enviar una imagen o video');
@@ -116,7 +117,7 @@ export class AdvertisementsService extends PaginationService {
     const { page, limit } = this.validatePaginationParams(
       findAdvertisementsQueryDto,
     );
-    const skip = this.calulateSkip(page, limit);
+    const skip = this.calculateSkip(page, limit);
     const where = this.buildFindWhere(findAdvertisementsQueryDto);
 
     const [rows, [{ value: total }]] = await Promise.all([
@@ -136,7 +137,7 @@ export class AdvertisementsService extends PaginationService {
     ]);
 
     const data = rows.map((row) => this.toResponse(row));
-    const meta = this.builPaginationMeta(total, page, limit, data.length);
+    const meta = this.buildPaginationMeta(total, page, limit, data.length);
 
     return { data, meta };
   }
@@ -353,7 +354,7 @@ export class AdvertisementsService extends PaginationService {
     try {
       await unlink(absolutePath);
     } catch {
-      // No bloquea la operaciÃ³n principal si el archivo ya no existe.
+      // No bloquea la operacion principal si el archivo ya no existe.
     }
   }
 

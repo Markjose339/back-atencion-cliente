@@ -1,2 +1,5 @@
 onlyBuiltDependencies:
+  - '@nestjs/core'
+  - argon2
   - esbuild
+  - unrs-resolver
