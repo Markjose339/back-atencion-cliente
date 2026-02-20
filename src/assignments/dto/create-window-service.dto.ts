@@ -1,16 +1,36 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateWindowServiceDto {
-  @IsString()
+  @IsString({ message: 'branchId debe ser un texto' })
+  @IsNotEmpty({ message: 'branchId es requerido' })
   branchId!: string;
 
-  @IsString()
+  @IsString({ message: 'windowId debe ser un texto' })
+  @IsNotEmpty({ message: 'windowId es requerido' })
   windowId!: string;
 
-  @IsString()
-  serviceId!: string;
+  @IsArray({ message: 'serviceIds debe ser un arreglo' })
+  @ArrayMinSize(1, {
+    message: 'Debe enviar al menos un servicio para asignar',
+  })
+  @IsString({
+    each: true,
+    message: 'Cada serviceId debe ser un texto',
+  })
+  @IsNotEmpty({
+    each: true,
+    message: 'Ningun serviceId puede estar vacio',
+  })
+  serviceIds!: string[];
 
   @IsOptional()
-  @IsBoolean()
+  @IsBoolean({ message: 'isActive debe ser un booleano' })
   isActive?: boolean = true;
 }

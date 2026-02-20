@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
@@ -15,6 +16,8 @@ import { CreateWindowServiceDto } from './dto/create-window-service.dto';
 import { UpdateWindowServiceDto } from './dto/update-window-service.dto';
 import { CreateOperatorAssignmentDto } from './dto/create-operator-assignment.dto';
 import { UpdateOperatorAssignmentDto } from './dto/update-operator-assignment.dto';
+import { SyncWindowServicesDto } from './dto/sync-window-services.dto';
+import { SyncOperatorAssignmentsDto } from './dto/sync-operator-assignments.dto';
 
 @Controller('assignments')
 export class AssignmentsController {
@@ -35,6 +38,11 @@ export class AssignmentsController {
     return this.assignmentsService.getWindowServiceById(id);
   }
 
+  @Put('window-services/sync')
+  syncWindowServices(@Body() dto: SyncWindowServicesDto) {
+    return this.assignmentsService.syncWindowServices(dto);
+  }
+
   @Patch('window-services/:id')
   updateWindowService(
     @Param('id') id: string,
@@ -51,6 +59,21 @@ export class AssignmentsController {
   @Post('operators')
   createOperator(@Body() dto: CreateOperatorAssignmentDto) {
     return this.assignmentsService.createOperatorAssignment(dto);
+  }
+
+  @Get('branches/:branchId/windows')
+  listBranchWindows(@Param('branchId') branchId: string) {
+    return this.assignmentsService.listBranchWindows(branchId);
+  }
+
+  @Get('branches/:branchId/config')
+  getBranchConfig(@Param('branchId') branchId: string) {
+    return this.assignmentsService.getBranchConfig(branchId);
+  }
+
+  @Put('operators/sync')
+  syncOperators(@Body() dto: SyncOperatorAssignmentsDto) {
+    return this.assignmentsService.syncOperatorAssignments(dto);
   }
 
   @Get('operators')
