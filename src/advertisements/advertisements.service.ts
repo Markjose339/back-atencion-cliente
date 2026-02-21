@@ -23,7 +23,7 @@ import {
 } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, normalize } from 'node:path';
 import {
   ADVERTISEMENT_ALLOWED_IMAGE_MIME_TYPES,
   ADVERTISEMENT_ALLOWED_VIDEO_MIME_TYPES,
@@ -347,15 +347,67 @@ export class AdvertisementsService extends PaginationService {
   }
 
   private async safeDeletePhysicalFile(filePath: string): Promise<void> {
-    if (!filePath) return;
+    const candidates = this.resolveDeleteCandidates(filePath);
+    if (candidates.length === 0) return;
 
-    const absolutePath = join(this.uploadsRootDir, filePath);
+    for (const absolutePath of candidates) {
+      try {
+        await unlink(absolutePath);
+        return;
+      } catch (error) {
+        if (this.isErrnoCode(error, 'ENOENT')) {
+          continue;
+        }
 
-    try {
-      await unlink(absolutePath);
-    } catch {
-      // No bloquea la operacion principal si el archivo ya no existe.
+        return;
+      }
     }
+  }
+
+  private resolveDeleteCandidates(filePath: string): string[] {
+    const normalizedPath = filePath.replace(/\\/g, '/').trim();
+    if (!normalizedPath) return [];
+
+    const cleanPath = normalizedPath.replace(/^\/+/, '');
+    const withoutUploadsPrefix = cleanPath.startsWith('uploads/')
+      ? cleanPath.slice('uploads/'.length)
+      : cleanPath;
+
+    const safeRelativePath = this.sanitizeRelativePath(withoutUploadsPrefix);
+    const safePathFromProjectRoot = this.sanitizeRelativePath(cleanPath);
+    const absoluteNormalizedPath = normalize(filePath);
+
+    const candidates = new Set<string>();
+
+    if (safeRelativePath) {
+      candidates.add(join(this.uploadsRootDir, safeRelativePath));
+    }
+
+    if (safePathFromProjectRoot) {
+      candidates.add(join(process.cwd(), safePathFromProjectRoot));
+    }
+
+    if (isAbsolute(absoluteNormalizedPath)) {
+      candidates.add(absoluteNormalizedPath);
+    }
+
+    return [...candidates];
+  }
+
+  private sanitizeRelativePath(pathValue: string): string {
+    return pathValue
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter((segment) => segment && segment !== '.' && segment !== '..')
+      .join('/');
+  }
+
+  private isErrnoCode(error: unknown, code: string): boolean {
+    if (!error || typeof error !== 'object' || !('code' in error)) {
+      return false;
+    }
+
+    return (error as { code?: string }).code === code;
   }
 
   private toResponse(
