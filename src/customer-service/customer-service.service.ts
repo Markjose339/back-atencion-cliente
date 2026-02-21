@@ -11,13 +11,19 @@ import {
   CustomerServiceQueueResponse,
 } from './dto/operator-queue-response.dto';
 import {
+  type TicketDurationMetric,
+  type TicketAttentionTimelineListItem,
+  type TicketAttentionTimelineListResponse,
+} from './dto/ticket-attention-timeline-response.dto';
+import { AdminTicketTimelineQueryDto } from './dto/admin-ticket-timeline-query.dto';
+import {
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PublicDisplayTicket } from '@/public/interfaces/public.interface';
 
@@ -34,6 +40,24 @@ type TicketEventName =
   | 'ticket:started'
   | 'ticket:finished'
   | 'ticket:cancelled';
+
+type TicketAttentionTimelineListRow = {
+  id: string;
+  code: string;
+  packageCode: string | null;
+  type: 'REGULAR' | 'PREFERENCIAL';
+  status: TicketStatus;
+  branchId: string;
+  branchName: string;
+  serviceId: string;
+  serviceName: string;
+  userId: string | null;
+  userName: string | null;
+  calledAt: Date | null;
+  attentionStartedAt: Date | null;
+  attentionFinishedAt: Date | null;
+  createdAt: Date;
+};
 
 @Injectable()
 export class CustomerServiceService extends PaginationService {
@@ -158,6 +182,52 @@ export class CustomerServiceService extends PaginationService {
     this.websocketGateway.server.to(publicRoom).emit('ticket:updated', ticket);
   }
 
+  private buildDurationMetric(
+    start: Date | null,
+    end: Date | null,
+  ): TicketDurationMetric | null {
+    if (!start || !end) return null;
+
+    const milliseconds = end.getTime() - start.getTime();
+    if (milliseconds < 0) return null;
+
+    return {
+      milliseconds,
+      seconds: Number((milliseconds / 1000).toFixed(2)),
+      minutes: Number((milliseconds / 60000).toFixed(2)),
+    };
+  }
+
+  private mapTicketAttentionTimelineListItem(
+    row: TicketAttentionTimelineListRow,
+  ): TicketAttentionTimelineListItem {
+    return {
+      id: row.id,
+      code: row.code,
+      packageCode: row.packageCode,
+      type: row.type,
+      status: row.status,
+      branchId: row.branchId,
+      branchName: row.branchName,
+      serviceId: row.serviceId,
+      serviceName: row.serviceName,
+      userId: row.userId,
+      userName: row.userName,
+      calledAt: row.calledAt,
+      attentionStartedAt: row.attentionStartedAt,
+      attentionFinishedAt: row.attentionFinishedAt,
+      createdAt: row.createdAt,
+      fromCreatedToAttention: this.buildDurationMetric(
+        row.createdAt,
+        row.attentionStartedAt,
+      ),
+      fromAttentionStartToFinish: this.buildDurationMetric(
+        row.attentionStartedAt,
+        row.attentionFinishedAt,
+      ),
+    };
+  }
+
   async findPendingTicketsByUserServiceWindow(
     userId: string,
     branchId: string,
@@ -234,6 +304,72 @@ export class CustomerServiceService extends PaginationService {
 
     const meta = this.builPaginationMeta(total, page, limit, data.length);
     return { data, meta, isAttendingTicket: !!ticketInProgress, calledTicket };
+  }
+
+  async findTicketAttentionTimelines(
+    query: AdminTicketTimelineQueryDto,
+  ): Promise<TicketAttentionTimelineListResponse> {
+    const { page, limit } = this.validatePaginationParams(query);
+    const { search } = query;
+    const skip = this.calulateSkip(page, limit);
+    const branchId = query.branchId?.trim();
+
+    const searchTerm = search?.trim();
+    const searchFilter = searchTerm
+      ? or(
+          ilike(schema.tickets.code, `%${searchTerm}%`),
+          ilike(schema.tickets.packageCode, `%${searchTerm}%`),
+        )
+      : undefined;
+
+    const branchFilter = branchId
+      ? eq(schema.tickets.branchId, branchId)
+      : undefined;
+
+    const where = and(branchFilter, searchFilter);
+
+    const [rows, [{ value: total }]] = await Promise.all([
+      this.db
+        .select({
+          id: schema.tickets.id,
+          code: schema.tickets.code,
+          packageCode: schema.tickets.packageCode,
+          type: schema.tickets.type,
+          status: schema.tickets.status,
+          branchId: schema.tickets.branchId,
+          branchName: schema.branches.name,
+          serviceId: schema.tickets.serviceId,
+          serviceName: schema.services.name,
+          userId: schema.tickets.userId,
+          userName: schema.users.name,
+          calledAt: schema.tickets.calledAt,
+          attentionStartedAt: schema.tickets.attentionStartedAt,
+          attentionFinishedAt: schema.tickets.attentionFinishedAt,
+          createdAt: schema.tickets.createdAt,
+        })
+        .from(schema.tickets)
+        .innerJoin(
+          schema.branches,
+          eq(schema.tickets.branchId, schema.branches.id),
+        )
+        .innerJoin(
+          schema.services,
+          eq(schema.tickets.serviceId, schema.services.id),
+        )
+        .leftJoin(schema.users, eq(schema.tickets.userId, schema.users.id))
+        .where(where)
+        .orderBy(desc(schema.tickets.createdAt))
+        .limit(limit)
+        .offset(skip),
+      this.db.select({ value: count() }).from(schema.tickets).where(where),
+    ]);
+
+    const data = rows.map((row) =>
+      this.mapTicketAttentionTimelineListItem(row),
+    );
+    const meta = this.builPaginationMeta(total, page, limit, data.length);
+
+    return { data, meta };
   }
 
   async callNextTicket(branchId: string, serviceId: string, userId: string) {

@@ -15,6 +15,8 @@ import { CustomerServiceService } from './customer-service.service';
 import { OperatorQueueQueryDto } from './dto/operator-queue-query.dto';
 import { CallNextDto } from './dto/call-next.dto';
 import type { CustomerServiceQueueResponse } from './dto/operator-queue-response.dto';
+import { AdminTicketTimelineQueryDto } from './dto/admin-ticket-timeline-query.dto';
+import type { TicketAttentionTimelineListResponse } from './dto/ticket-attention-timeline-response.dto';
 
 type UserRequest = Request & { user: User };
 
@@ -37,6 +39,13 @@ export class CustomerServiceController {
       serviceId,
       { page, limit, search },
     );
+  }
+
+  @Get('timelines')
+  findAllTimelines(
+    @Query() query: AdminTicketTimelineQueryDto,
+  ): Promise<TicketAttentionTimelineListResponse> {
+    return this.customerServiceService.findTicketAttentionTimelines(query);
   }
 
   @Post('queue/call-next')
