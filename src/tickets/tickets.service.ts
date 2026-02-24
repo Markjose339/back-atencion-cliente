@@ -93,6 +93,13 @@ export class TicketsService {
         createdAt: ticket.createdAt,
       });
 
+      this.websocketGateway.emitDashboardInvalidation({
+        event: 'ticket:created',
+        ticketId: ticket.id,
+        branchId: dto.branchId,
+        serviceId: dto.serviceId,
+      });
+
       return {
         ...ticket,
         branchName: branch.name,

@@ -234,6 +234,13 @@ export class CustomerServiceService extends PaginationService {
 
     this.websocketGateway.server.to(privateRoom).emit('ticket:updated', ticket);
     this.websocketGateway.server.to(publicRoom).emit('ticket:updated', ticket);
+
+    this.websocketGateway.emitDashboardInvalidation({
+      event,
+      ticketId: ticket.id,
+      branchId: ticket.branchId,
+      serviceId: ticket.serviceId,
+    });
   }
 
   private buildDurationMetric(

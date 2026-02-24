@@ -18,6 +18,7 @@ import { WindowsModule } from './windows/windows.module';
 import { AssignmentsModule } from './assignments/assignments.module';
 import { PublicModule } from './public/public.module';
 import { AdvertisementsModule } from './advertisements/advertisements.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AdvertisementsModule } from './advertisements/advertisements.module';
     AssignmentsModule,
     PublicModule,
     AdvertisementsModule,
+    DashboardModule,
   ],
   controllers: [],
   providers: [

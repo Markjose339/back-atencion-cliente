@@ -21,6 +21,10 @@ type QueueJoinBody = {
   serviceId: string;
 };
 
+type DashboardJoinBody = {
+  branchId?: string;
+};
+
 type SocketData = {
   user?: User;
 };
@@ -38,8 +42,28 @@ type PublicJoinAck =
   | { ok: true; room: string }
   | { ok: false; message: string };
 
+type DashboardJoinAck =
+  | { ok: true; rooms: string[] }
+  | { ok: false; message: string };
+
+type DashboardInvalidatePayload = {
+  event:
+    | 'ticket:created'
+    | 'ticket:called'
+    | 'ticket:recalled'
+    | 'ticket:started'
+    | 'ticket:held'
+    | 'ticket:finished'
+    | 'ticket:cancelled';
+  ticketId?: string;
+  branchId: string;
+  serviceId?: string;
+  at: string;
+};
+
 type ServerToClientEvents = {
   'auth:ready': (payload: AuthReadyPayload) => void;
+  'dashboard:invalidate': (payload: DashboardInvalidatePayload) => void;
 };
 
 type AuthedSocket = Socket<
@@ -202,12 +226,85 @@ export class WebsocketGateway
     return { ok: true, room };
   }
 
+  @SubscribeMessage('dashboard:join')
+  async dashboardJoin(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() body?: unknown,
+  ): Promise<DashboardJoinAck> {
+    const user = client.data.user;
+    if (!user) return { ok: false, message: 'No autenticado' };
+
+    const parsed = this.parseDashboardJoinBody(body);
+    if (!parsed) {
+      return { ok: false, message: 'Formato invalido para dashboard:join' };
+    }
+
+    const rooms = [this.getDashboardGlobalRoom()];
+
+    if (parsed?.branchId) {
+      const branch = await this.db.query.branches.findFirst({
+        where: and(
+          eq(schema.branches.id, parsed.branchId),
+          eq(schema.branches.isActive, true),
+        ),
+        columns: { id: true },
+      });
+
+      if (!branch) {
+        return {
+          ok: false,
+          message: 'La sucursal no existe o esta inactiva',
+        };
+      }
+    }
+
+    await client.join(this.getDashboardGlobalRoom());
+
+    if (parsed?.branchId) {
+      const branchRoom = this.getDashboardBranchRoom(parsed.branchId);
+      await client.join(branchRoom);
+      rooms.push(branchRoom);
+    }
+
+    return { ok: true, rooms };
+  }
+
+  emitDashboardInvalidation(payload: {
+    event: DashboardInvalidatePayload['event'];
+    branchId: string;
+    serviceId?: string;
+    ticketId?: string;
+  }) {
+    const message: DashboardInvalidatePayload = {
+      event: payload.event,
+      branchId: payload.branchId,
+      serviceId: payload.serviceId,
+      ticketId: payload.ticketId,
+      at: new Date().toISOString(),
+    };
+
+    this.server
+      .to(this.getDashboardGlobalRoom())
+      .emit('dashboard:invalidate', message);
+    this.server
+      .to(this.getDashboardBranchRoom(payload.branchId))
+      .emit('dashboard:invalidate', message);
+  }
+
   getQueueRoom(branchId: string, serviceId: string) {
     return `queue:${branchId}:${serviceId}`;
   }
 
   getPublicRoom(branchId: string, serviceId: string) {
     return `public:branch:${branchId}:service:${serviceId}`;
+  }
+
+  getDashboardGlobalRoom() {
+    return 'dashboard:global';
+  }
+
+  getDashboardBranchRoom(branchId: string) {
+    return `dashboard:branch:${branchId}`;
   }
 
   private getAccessTokenFromSocket(client: AuthedSocket): string | null {
@@ -254,6 +351,22 @@ export class WebsocketGateway
       maybe.serviceId.length > 0
     ) {
       return { branchId: maybe.branchId, serviceId: maybe.serviceId };
+    }
+
+    return null;
+  }
+
+  private parseDashboardJoinBody(body: unknown): DashboardJoinBody | null {
+    if (body === undefined || body === null) return {};
+    if (!this.isRecord(body)) return null;
+
+    const maybe = body as Partial<DashboardJoinBody>;
+    if (typeof maybe.branchId === 'undefined') {
+      return {};
+    }
+
+    if (typeof maybe.branchId === 'string' && maybe.branchId.length > 0) {
+      return { branchId: maybe.branchId };
     }
 
     return null;
