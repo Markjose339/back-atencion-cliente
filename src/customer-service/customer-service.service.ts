@@ -498,7 +498,11 @@ export class CustomerServiceService extends PaginationService {
         columns: { id: true },
       });
 
-      if (!next) return null;
+      if (!next) {
+        throw new NotFoundException(
+          'No hay tickets disponibles para tu servicio',
+        );
+      }
 
       const [ticket] = await tx
         .update(schema.tickets)
@@ -538,8 +542,6 @@ export class CustomerServiceService extends PaginationService {
 
       return ticket;
     });
-
-    if (!called) return null;
 
     const displayTicket = await this.getDisplayTicketOrThrow(called.id);
     this.emitTicketEvent('ticket:called', displayTicket);
