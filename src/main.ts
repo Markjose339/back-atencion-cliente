@@ -4,8 +4,8 @@ import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import { join } from 'node:path';
-import type { Server } from 'node:http';
 
 const HTTP_REQUEST_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2h
 const HTTP_HEADERS_TIMEOUT_MS = HTTP_REQUEST_TIMEOUT_MS + 5000;
@@ -29,15 +29,22 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
   });
   app.use(cookieParser());
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    req.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
+    res.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
+    req.socket.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
+    next();
+  });
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads/',
   });
 
   await app.listen(process.env.PORT ?? 3000);
 
-  const httpServer = app.getHttpServer() as Server;
+  const httpServer = app.getHttpServer();
+  httpServer.timeout = HTTP_REQUEST_TIMEOUT_MS;
   httpServer.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;
   httpServer.headersTimeout = HTTP_HEADERS_TIMEOUT_MS;
   httpServer.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT_MS;
 }
-bootstrap();
+void bootstrap();
