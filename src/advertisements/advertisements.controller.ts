@@ -1,5 +1,6 @@
 import { Public } from '@/auth/decorators/public.decorator';
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,6 +10,7 @@ import {
   Post,
   Query,
   UploadedFile,
+  UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -24,6 +26,7 @@ import {
 import { CreateAdvertisementDto } from './dto/create-advertisement.dto';
 import { FindAdvertisementsQueryDto } from './dto/find-advertisements-query.dto';
 import { UpdateAdvertisementDto } from './dto/update-advertisement.dto';
+import { AdvertisementUploadExceptionFilter } from './filters/advertisement-upload-exception.filter';
 import type { AdvertisementUploadFile } from './interfaces/advertisement-upload-file.interface';
 import { AdvertisementsService } from './advertisements.service';
 
@@ -42,6 +45,7 @@ export class AdvertisementsController {
   constructor(private readonly advertisementsService: AdvertisementsService) {}
 
   @Post('upload')
+  @UseFilters(AdvertisementUploadExceptionFilter)
   @UseInterceptors(
     FileInterceptor(ADVERTISEMENT_UPLOAD_FIELD, {
       dest: ADVERTISEMENT_UPLOAD_DIR,
@@ -54,7 +58,12 @@ export class AdvertisementsController {
         callback: (error: Error | null, acceptFile: boolean) => void,
       ) => {
         if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype)) {
-          callback(null, false);
+          callback(
+            new BadRequestException(
+              `Tipo de archivo no permitido: ${file.mimetype}`,
+            ),
+            false,
+          );
           return;
         }
 

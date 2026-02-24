@@ -33,7 +33,6 @@ import {
   ADVERTISEMENT_MEDIA_TYPES,
   ADVERTISEMENT_DISPLAY_MODES,
   ADVERTISEMENT_TRANSITIONS,
-  ADVERTISEMENT_UPLOAD_REQUEST_TIMEOUT_MS,
   ADVERTISEMENT_UPLOAD_SUBDIRECTORY,
   type AdvertisementDisplayMode,
   type AdvertisementMediaType,
@@ -41,7 +40,6 @@ import {
 import { CreateAdvertisementDto } from './dto/create-advertisement.dto';
 import { FindAdvertisementsQueryDto } from './dto/find-advertisements-query.dto';
 import { UpdateAdvertisementDto } from './dto/update-advertisement.dto';
-import type { Request } from 'express';
 import type { AdvertisementUploadFile } from './interfaces/advertisement-upload-file.interface';
 import { AdvertisementResponse } from './interfaces/advertisement.interface';
 
@@ -56,12 +54,6 @@ export class AdvertisementsService extends PaginationService {
     private readonly db: NodePgDatabase<typeof schema>,
   ) {
     super();
-  }
-
-  configureUploadTimeout(request: Request): void {
-    request.setTimeout(ADVERTISEMENT_UPLOAD_REQUEST_TIMEOUT_MS);
-    request.res?.setTimeout(ADVERTISEMENT_UPLOAD_REQUEST_TIMEOUT_MS);
-    request.socket.setTimeout(ADVERTISEMENT_UPLOAD_REQUEST_TIMEOUT_MS);
   }
 
   async create(
