@@ -18,7 +18,13 @@ export type CustomerServiceQueueTicket = {
   code: string;
   packageCode: string | null;
   type: 'REGULAR' | 'PREFERENCIAL';
-  status: 'PENDIENTE' | 'LLAMADO' | 'ATENDIENDO' | 'FINALIZADO' | 'CANCELADO';
+  status:
+    | 'PENDIENTE'
+    | 'LLAMADO'
+    | 'ATENDIENDO'
+    | 'ESPERA'
+    | 'FINALIZADO'
+    | 'CANCELADO';
   branchId: string;
   serviceId: string;
   calledAt: Date | null;
@@ -29,6 +35,7 @@ export type CustomerServiceQueueTicket = {
 
 export type CustomerServiceQueueResponse = {
   data: CustomerServiceQueueTicket[];
+  heldTickets: CustomerServiceQueueTicket[];
   meta: PaginationMeta;
   isAttendingTicket: boolean;
   calledTicket: CustomerServiceCalledTicket | null;

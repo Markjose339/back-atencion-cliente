@@ -62,6 +62,11 @@ export class CustomerServiceController {
     return this.customerServiceService.recallTicket(ticketId, req.user.id);
   }
 
+  @Patch(':ticketId/hold')
+  hold(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
+    return this.customerServiceService.holdTicket(ticketId, req.user.id);
+  }
+
   @Patch(':ticketId/start')
   start(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
     return this.customerServiceService.startTicketAttention(

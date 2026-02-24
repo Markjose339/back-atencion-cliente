@@ -21,6 +21,7 @@ export const TicketStatusEnum = pgEnum('ticket_status', [
   'PENDIENTE',
   'LLAMADO',
   'ATENDIENDO',
+  'ESPERA',
   'FINALIZADO',
   'CANCELADO',
 ]);

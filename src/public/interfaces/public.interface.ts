@@ -2,6 +2,7 @@ export type TicketStatus =
   | 'PENDIENTE'
   | 'LLAMADO'
   | 'ATENDIENDO'
+  | 'ESPERA'
   | 'FINALIZADO'
   | 'CANCELADO';
 

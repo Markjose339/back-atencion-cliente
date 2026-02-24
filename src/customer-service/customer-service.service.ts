@@ -23,7 +23,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, isNull, ne, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PublicDisplayTicket } from '@/public/interfaces/public.interface';
 
@@ -31,6 +31,7 @@ type TicketStatus =
   | 'PENDIENTE'
   | 'LLAMADO'
   | 'ATENDIENDO'
+  | 'ESPERA'
   | 'FINALIZADO'
   | 'CANCELADO';
 
@@ -38,6 +39,7 @@ type TicketEventName =
   | 'ticket:called'
   | 'ticket:recalled'
   | 'ticket:started'
+  | 'ticket:held'
   | 'ticket:finished'
   | 'ticket:cancelled';
 
@@ -61,6 +63,8 @@ type TicketAttentionTimelineListRow = {
 
 @Injectable()
 export class CustomerServiceService extends PaginationService {
+  private readonly MAX_HELD_TICKETS = 3;
+
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
@@ -146,6 +150,54 @@ export class CustomerServiceService extends PaginationService {
     if (!calledTicket) return null;
 
     return { ...calledTicket, status: 'LLAMADO' };
+  }
+
+  private async countHeldTicketsByUser(userId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ value: count() })
+      .from(schema.tickets)
+      .where(
+        and(
+          eq(schema.tickets.userId, userId),
+          eq(schema.tickets.status, 'ESPERA' as TicketStatus),
+          isNull(schema.tickets.attentionFinishedAt),
+        ),
+      );
+
+    return Number(row?.value ?? 0);
+  }
+
+  private async getHeldTicketsByScope(
+    userId: string,
+    branchId: string,
+    serviceId: string,
+  ) {
+    return this.db.query.tickets.findMany({
+      where: and(
+        eq(schema.tickets.userId, userId),
+        eq(schema.tickets.branchId, branchId),
+        eq(schema.tickets.serviceId, serviceId),
+        eq(schema.tickets.status, 'ESPERA' as TicketStatus),
+        isNull(schema.tickets.attentionFinishedAt),
+      ),
+      columns: {
+        id: true,
+        code: true,
+        packageCode: true,
+        type: true,
+        status: true,
+        branchId: true,
+        serviceId: true,
+        calledAt: true,
+        attentionStartedAt: true,
+        attentionFinishedAt: true,
+        createdAt: true,
+      },
+      orderBy: (t, { asc }) => [
+        sql`${t.attentionStartedAt} ASC NULLS LAST`,
+        asc(t.createdAt),
+      ],
+    });
   }
 
   private async getDisplayTicketOrThrow(ticketId: string) {
@@ -246,7 +298,7 @@ export class CustomerServiceService extends PaginationService {
     );
     await this.getBranchWindowServiceIdOrThrow(branchWindowId, serviceId);
 
-    const [ticketInProgress, calledTicket] = await Promise.all([
+    const [ticketInProgress, calledTicket, heldTickets] = await Promise.all([
       this.db.query.tickets.findFirst({
         where: and(
           eq(schema.tickets.userId, userId),
@@ -256,6 +308,7 @@ export class CustomerServiceService extends PaginationService {
         columns: { id: true },
       }),
       this.getLatestCalledTicketByScope(userId, branchId, serviceId),
+      this.getHeldTicketsByScope(userId, branchId, serviceId),
     ]);
 
     const searchFilter = search
@@ -303,7 +356,13 @@ export class CustomerServiceService extends PaginationService {
     ]);
 
     const meta = this.builPaginationMeta(total, page, limit, data.length);
-    return { data, meta, isAttendingTicket: !!ticketInProgress, calledTicket };
+    return {
+      data,
+      heldTickets,
+      meta,
+      isAttendingTicket: !!ticketInProgress,
+      calledTicket,
+    };
   }
 
   async findTicketAttentionTimelines(
@@ -488,15 +547,126 @@ export class CustomerServiceService extends PaginationService {
     return called;
   }
 
+  async holdTicket(ticketId: string, userId: string) {
+    await Promise.all([
+      this.ticketsService.validatedTicketId(ticketId),
+      this.usersService.validatedUserId(userId),
+    ]);
+
+    const heldCount = await this.countHeldTicketsByUser(userId);
+    if (heldCount >= this.MAX_HELD_TICKETS) {
+      throw new BadRequestException(
+        'No puedes tener mas de 3 tickets en espera',
+      );
+    }
+
+    const [held] = await this.db
+      .update(schema.tickets)
+      .set({
+        status: 'ESPERA' as TicketStatus,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(schema.tickets.id, ticketId),
+          eq(schema.tickets.userId, userId),
+          eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
+          isNull(schema.tickets.attentionFinishedAt),
+        ),
+      )
+      .returning({
+        id: schema.tickets.id,
+        code: schema.tickets.code,
+      });
+
+    if (!held) {
+      throw new BadRequestException(
+        'No se puede poner en espera: el ticket no esta ATENDIENDO por este usuario',
+      );
+    }
+
+    const displayTicket = await this.getDisplayTicketOrThrow(held.id);
+    this.emitTicketEvent('ticket:held', displayTicket);
+
+    return {
+      message: `Ticket "${held.code}" puesto en espera correctamente`,
+    };
+  }
+
   async recallTicket(ticketId: string, userId: string) {
     await Promise.all([
       this.ticketsService.validatedTicketId(ticketId),
       this.usersService.validatedUserId(userId),
     ]);
 
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(schema.tickets.id, ticketId),
+        eq(schema.tickets.userId, userId),
+      ),
+      columns: {
+        id: true,
+        status: true,
+        attentionStartedAt: true,
+        attentionFinishedAt: true,
+      },
+    });
+
+    if (!ticket) {
+      throw new NotFoundException(
+        'No se encontro el ticket para re-llamar por este usuario',
+      );
+    }
+
+    const canRecallFromCalled = ticket.status === ('LLAMADO' as TicketStatus);
+    const canRecallFromHeld =
+      ticket.status === ('ESPERA' as TicketStatus) &&
+      !!ticket.attentionStartedAt;
+
+    if (!canRecallFromCalled && !canRecallFromHeld) {
+      throw new BadRequestException(
+        'No se puede re-llamar: el ticket no esta LLAMADO ni ESPERA por este usuario',
+      );
+    }
+
+    if (canRecallFromHeld) {
+      const calledByUser = await this.db.query.tickets.findFirst({
+        where: and(
+          eq(schema.tickets.userId, userId),
+          eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
+          isNull(schema.tickets.attentionFinishedAt),
+          ne(schema.tickets.id, ticketId),
+        ),
+        columns: { id: true },
+      });
+
+      if (calledByUser) {
+        throw new BadRequestException(
+          'No puedes re-llamar un ticket en espera mientras tienes uno en estado LLAMADO',
+        );
+      }
+
+      const attendingByUser = await this.db.query.tickets.findFirst({
+        where: and(
+          eq(schema.tickets.userId, userId),
+          eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
+          isNull(schema.tickets.attentionFinishedAt),
+          ne(schema.tickets.id, ticketId),
+        ),
+        columns: { id: true },
+      });
+
+      if (attendingByUser) {
+        throw new BadRequestException(
+          'No puedes re-llamar un ticket en espera mientras tienes uno en ATENDIENDO',
+        );
+      }
+    }
+
     const [recalled] = await this.db
       .update(schema.tickets)
       .set({
+        status: 'LLAMADO' as TicketStatus,
         calledAt: sql`now()`,
         updatedAt: sql`now()`,
       })
@@ -504,8 +674,7 @@ export class CustomerServiceService extends PaginationService {
         and(
           eq(schema.tickets.id, ticketId),
           eq(schema.tickets.userId, userId),
-          eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
-          isNull(schema.tickets.attentionStartedAt),
+          eq(schema.tickets.status, ticket.status),
           isNull(schema.tickets.attentionFinishedAt),
         ),
       )
@@ -523,8 +692,8 @@ export class CustomerServiceService extends PaginationService {
       });
 
     if (!recalled) {
-      throw new BadRequestException(
-        'No se puede re-llamar: el ticket no esta LLAMADO por este usuario',
+      throw new ConflictException(
+        'No se pudo re-llamar: el ticket cambio de estado, intenta nuevamente',
       );
     }
 
@@ -544,42 +713,128 @@ export class CustomerServiceService extends PaginationService {
       this.usersService.validatedUserId(userId),
     ]);
 
-    const inProgress = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(schema.tickets.userId, userId),
-        eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
-        isNull(schema.tickets.attentionFinishedAt),
-      ),
-      columns: { id: true },
-    });
+    const started = await this.db.transaction(async (tx) => {
+      // Lock all operator tickets to avoid concurrent conflicting transitions.
+      await tx.execute(
+        sql`SELECT ${schema.tickets.id} FROM ${schema.tickets} WHERE ${schema.tickets.userId} = ${userId} FOR UPDATE`,
+      );
 
-    if (inProgress && inProgress.id !== ticketId) {
-      throw new BadRequestException('Ya estas ATENDIENDO un ticket');
-    }
-
-    const [started] = await this.db
-      .update(schema.tickets)
-      .set({
-        status: 'ATENDIENDO' as TicketStatus,
-        attentionStartedAt: sql`now()`,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(
+      const ticket = await tx.query.tickets.findFirst({
+        where: and(
           eq(schema.tickets.id, ticketId),
           eq(schema.tickets.userId, userId),
-          eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
-          isNull(schema.tickets.attentionStartedAt),
         ),
-      )
-      .returning({
-        id: schema.tickets.id,
-        code: schema.tickets.code,
+        columns: {
+          id: true,
+          status: true,
+          attentionStartedAt: true,
+          attentionFinishedAt: true,
+        },
       });
 
+      if (!ticket) {
+        throw new NotFoundException(
+          'No se puede iniciar: ticket no pertenece al usuario',
+        );
+      }
+
+      const canStartFromCalled = ticket.status === ('LLAMADO' as TicketStatus);
+      const canStartFromHeld = ticket.status === ('ESPERA' as TicketStatus);
+
+      if (
+        (!canStartFromCalled && !canStartFromHeld) ||
+        ticket.attentionFinishedAt
+      ) {
+        throw new NotFoundException(
+          'No se puede iniciar: ticket no esta LLAMADO/ESPERA o ya finalizo',
+        );
+      }
+
+      if (canStartFromHeld) {
+        const calledConflict = await tx.query.tickets.findFirst({
+          where: and(
+            eq(schema.tickets.userId, userId),
+            eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
+            isNull(schema.tickets.attentionFinishedAt),
+            ne(schema.tickets.id, ticketId),
+          ),
+          columns: { id: true },
+        });
+
+        if (calledConflict) {
+          throw new BadRequestException(
+            'No puedes reanudar un ticket en espera mientras tienes uno en estado LLAMADO',
+          );
+        }
+
+        const attendingConflict = await tx.query.tickets.findFirst({
+          where: and(
+            eq(schema.tickets.userId, userId),
+            eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
+            isNull(schema.tickets.attentionFinishedAt),
+            ne(schema.tickets.id, ticketId),
+          ),
+          columns: { id: true },
+        });
+
+        if (attendingConflict) {
+          throw new BadRequestException(
+            'No puedes reanudar un ticket en espera mientras tienes uno en ATENDIENDO',
+          );
+        }
+      }
+
+      const [updated] = ticket.attentionStartedAt
+        ? await tx
+            .update(schema.tickets)
+            .set({
+              status: 'ATENDIENDO' as TicketStatus,
+              updatedAt: sql`now()`,
+            })
+            .where(
+              and(
+                eq(schema.tickets.id, ticketId),
+                eq(schema.tickets.userId, userId),
+                eq(schema.tickets.status, ticket.status),
+                isNull(schema.tickets.attentionFinishedAt),
+              ),
+            )
+            .returning({
+              id: schema.tickets.id,
+              code: schema.tickets.code,
+            })
+        : await tx
+            .update(schema.tickets)
+            .set({
+              status: 'ATENDIENDO' as TicketStatus,
+              attentionStartedAt: sql`now()`,
+              updatedAt: sql`now()`,
+            })
+            .where(
+              and(
+                eq(schema.tickets.id, ticketId),
+                eq(schema.tickets.userId, userId),
+                eq(schema.tickets.status, ticket.status),
+                isNull(schema.tickets.attentionFinishedAt),
+              ),
+            )
+            .returning({
+              id: schema.tickets.id,
+              code: schema.tickets.code,
+            });
+
+      if (!updated) {
+        throw new ConflictException(
+          'No se puede iniciar: el ticket cambio de estado, intenta nuevamente',
+        );
+      }
+
+      return updated;
+    });
+
     if (!started) {
-      throw new NotFoundException(
-        'No se puede iniciar: ticket no esta LLAMADO o no pertenece al usuario',
+      throw new ConflictException(
+        'No se puede iniciar: el ticket cambio de estado, intenta nuevamente',
       );
     }
 
@@ -652,6 +907,7 @@ export class CustomerServiceService extends PaginationService {
           or(
             eq(schema.tickets.status, 'PENDIENTE' as TicketStatus),
             eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
+            eq(schema.tickets.status, 'ESPERA' as TicketStatus),
           ),
         ),
       )
