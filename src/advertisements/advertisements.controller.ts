@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -63,9 +64,11 @@ export class AdvertisementsController {
     }),
   )
   create(
+    @Req() req: Request,
     @Body() createAdvertisementDto: CreateAdvertisementDto,
     @UploadedFile() file?: AdvertisementUploadFile,
   ) {
+    this.advertisementsService.configureUploadTimeout(req);
     return this.advertisementsService.create(createAdvertisementDto, file);
   }
 
