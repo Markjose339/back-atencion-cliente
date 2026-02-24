@@ -167,37 +167,39 @@ export class CustomerServiceService extends PaginationService {
     return Number(row?.value ?? 0);
   }
 
-  private async getHeldTicketsByScope(
-    userId: string,
-    branchId: string,
-    serviceId: string,
-  ) {
-    return this.db.query.tickets.findMany({
-      where: and(
-        eq(schema.tickets.userId, userId),
-        eq(schema.tickets.branchId, branchId),
-        eq(schema.tickets.serviceId, serviceId),
-        eq(schema.tickets.status, 'ESPERA' as TicketStatus),
-        isNull(schema.tickets.attentionFinishedAt),
-      ),
-      columns: {
-        id: true,
-        code: true,
-        packageCode: true,
-        type: true,
-        status: true,
-        branchId: true,
-        serviceId: true,
-        calledAt: true,
-        attentionStartedAt: true,
-        attentionFinishedAt: true,
-        createdAt: true,
-      },
-      orderBy: (t, { asc }) => [
-        sql`${t.attentionStartedAt} ASC NULLS LAST`,
-        asc(t.createdAt),
-      ],
-    });
+  private async getHeldTicketsByUserBranch(userId: string, branchId: string) {
+    return this.db
+      .select({
+        id: schema.tickets.id,
+        code: schema.tickets.code,
+        packageCode: schema.tickets.packageCode,
+        type: schema.tickets.type,
+        status: schema.tickets.status,
+        branchId: schema.tickets.branchId,
+        serviceId: schema.tickets.serviceId,
+        serviceName: schema.services.name,
+        calledAt: schema.tickets.calledAt,
+        attentionStartedAt: schema.tickets.attentionStartedAt,
+        attentionFinishedAt: schema.tickets.attentionFinishedAt,
+        createdAt: schema.tickets.createdAt,
+      })
+      .from(schema.tickets)
+      .innerJoin(
+        schema.services,
+        eq(schema.tickets.serviceId, schema.services.id),
+      )
+      .where(
+        and(
+          eq(schema.tickets.userId, userId),
+          eq(schema.tickets.branchId, branchId),
+          eq(schema.tickets.status, 'ESPERA' as TicketStatus),
+          isNull(schema.tickets.attentionFinishedAt),
+        ),
+      )
+      .orderBy(
+        sql`${schema.tickets.attentionStartedAt} ASC NULLS LAST`,
+        schema.tickets.createdAt,
+      );
   }
 
   private async getDisplayTicketOrThrow(ticketId: string) {
@@ -308,7 +310,7 @@ export class CustomerServiceService extends PaginationService {
         columns: { id: true },
       }),
       this.getLatestCalledTicketByScope(userId, branchId, serviceId),
-      this.getHeldTicketsByScope(userId, branchId, serviceId),
+      this.getHeldTicketsByUserBranch(userId, branchId),
     ]);
 
     const searchFilter = search

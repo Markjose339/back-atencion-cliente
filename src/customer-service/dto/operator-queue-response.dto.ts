@@ -33,9 +33,13 @@ export type CustomerServiceQueueTicket = {
   createdAt: Date;
 };
 
+export type CustomerServiceHeldTicket = CustomerServiceQueueTicket & {
+  serviceName: string;
+};
+
 export type CustomerServiceQueueResponse = {
   data: CustomerServiceQueueTicket[];
-  heldTickets: CustomerServiceQueueTicket[];
+  heldTickets: CustomerServiceHeldTicket[];
   meta: PaginationMeta;
   isAttendingTicket: boolean;
   calledTicket: CustomerServiceCalledTicket | null;
