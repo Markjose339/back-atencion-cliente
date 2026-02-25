@@ -4,6 +4,7 @@
 /build
 /drizzle
 /uploads
+/keys
 
 # Logs
 logs

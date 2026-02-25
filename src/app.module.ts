@@ -19,6 +19,7 @@ import { AssignmentsModule } from './assignments/assignments.module';
 import { PublicModule } from './public/public.module';
 import { AdvertisementsModule } from './advertisements/advertisements.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { QzModule } from './qz/qz.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     PublicModule,
     AdvertisementsModule,
     DashboardModule,
+    QzModule,
   ],
   controllers: [],
   providers: [
