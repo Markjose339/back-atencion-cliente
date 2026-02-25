@@ -7,7 +7,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { join } from 'node:path';
 
-const HTTP_REQUEST_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2h
+const HTTP_REQUEST_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const HTTP_HEADERS_TIMEOUT_MS = HTTP_REQUEST_TIMEOUT_MS + 5000;
 const HTTP_KEEP_ALIVE_TIMEOUT_MS = 75 * 1000;
 
@@ -42,6 +42,7 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3000);
 
   const httpServer = app.getHttpServer();
+  httpServer.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   httpServer.timeout = HTTP_REQUEST_TIMEOUT_MS;
   httpServer.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;
   httpServer.headersTimeout = HTTP_HEADERS_TIMEOUT_MS;

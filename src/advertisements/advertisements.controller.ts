@@ -14,9 +14,10 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
 import type { Request } from 'express';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import {
   ADVERTISEMENT_ALLOWED_UPLOAD_MIME_TYPES,
   ADVERTISEMENT_MAX_FILE_SIZE_BYTES,
@@ -40,6 +41,12 @@ const ALLOWED_UPLOAD_MIME_TYPES = new Set<string>(
   ADVERTISEMENT_ALLOWED_UPLOAD_MIME_TYPES,
 );
 
+const buildUploadFileName = (originalName: string): string => {
+  const extension = extname(originalName).toLowerCase();
+  const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+  return `${uniqueSuffix}${extension}`;
+};
+
 @Controller('advertisements')
 export class AdvertisementsController {
   constructor(private readonly advertisementsService: AdvertisementsService) {}
@@ -48,7 +55,14 @@ export class AdvertisementsController {
   @UseFilters(AdvertisementUploadExceptionFilter)
   @UseInterceptors(
     FileInterceptor(ADVERTISEMENT_UPLOAD_FIELD, {
-      dest: ADVERTISEMENT_UPLOAD_DIR,
+      storage: diskStorage({
+        destination: (_req, _file, callback) => {
+          callback(null, ADVERTISEMENT_UPLOAD_DIR);
+        },
+        filename: (_req, file: AdvertisementUploadFile, callback) => {
+          callback(null, buildUploadFileName(file.originalname));
+        },
+      }),
       limits: {
         fileSize: ADVERTISEMENT_MAX_FILE_SIZE_BYTES,
       },
