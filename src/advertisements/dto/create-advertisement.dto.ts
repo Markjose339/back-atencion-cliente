@@ -3,23 +3,16 @@ import {
   IsBoolean,
   IsDate,
   IsIn,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
-  Max,
   MaxLength,
-  Min,
 } from 'class-validator';
 import {
   ADVERTISEMENT_DISPLAY_MODES,
-  ADVERTISEMENT_TRANSITIONS,
+  ADVERTISEMENT_MEDIA_TYPES,
 } from '@/advertisements/constants/advertisement.constants';
-import {
-  toOptionalBoolean,
-  toOptionalDateOrNull,
-  toOptionalNumber,
-} from './transformers';
+import { toOptionalBoolean, toOptionalDateOrNull } from './transformers';
 
 export class CreateAdvertisementDto {
   @IsNotEmpty({ message: 'El titulo es obligatorio' })
@@ -27,12 +20,11 @@ export class CreateAdvertisementDto {
   @MaxLength(120, { message: 'El titulo no puede exceder 120 caracteres' })
   title: string;
 
-  @IsOptional()
-  @IsString({ message: 'La descripcion debe ser texto' })
-  @MaxLength(300, {
-    message: 'La descripcion no puede exceder 300 caracteres',
+  @IsNotEmpty({ message: 'mediaType es obligatorio' })
+  @IsIn(ADVERTISEMENT_MEDIA_TYPES, {
+    message: `mediaType invalido. Valores permitidos: ${ADVERTISEMENT_MEDIA_TYPES.join(', ')}`,
   })
-  description?: string;
+  mediaType: (typeof ADVERTISEMENT_MEDIA_TYPES)[number];
 
   @IsOptional()
   @IsIn(ADVERTISEMENT_DISPLAY_MODES, {
@@ -41,23 +33,11 @@ export class CreateAdvertisementDto {
   displayMode?: (typeof ADVERTISEMENT_DISPLAY_MODES)[number];
 
   @IsOptional()
-  @IsIn(ADVERTISEMENT_TRANSITIONS, {
-    message: `transition invalida. Valores permitidos: ${ADVERTISEMENT_TRANSITIONS.join(', ')}`,
+  @IsString({ message: 'textContent debe ser texto' })
+  @MaxLength(500, {
+    message: 'textContent no puede exceder 500 caracteres',
   })
-  transition?: (typeof ADVERTISEMENT_TRANSITIONS)[number];
-
-  @IsOptional()
-  @Transform(toOptionalNumber)
-  @IsInt({ message: 'durationSeconds debe ser un entero' })
-  @Min(1, { message: 'durationSeconds debe ser mayor o igual a 1' })
-  @Max(300, { message: 'durationSeconds debe ser menor o igual a 300' })
-  durationSeconds?: number;
-
-  @IsOptional()
-  @Transform(toOptionalNumber)
-  @IsInt({ message: 'sortOrder debe ser un entero' })
-  @Min(0, { message: 'sortOrder debe ser mayor o igual a 0' })
-  sortOrder?: number;
+  textContent?: string;
 
   @IsOptional()
   @Transform(toOptionalBoolean)

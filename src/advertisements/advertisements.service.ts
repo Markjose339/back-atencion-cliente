@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import {
   and,
-  asc,
   count,
   desc,
   eq,
@@ -28,11 +27,8 @@ import {
   ADVERTISEMENT_ALLOWED_IMAGE_MIME_TYPES,
   ADVERTISEMENT_ALLOWED_VIDEO_MIME_TYPES,
   ADVERTISEMENT_DEFAULT_DISPLAY_MODE,
-  ADVERTISEMENT_DEFAULT_DURATION_SECONDS,
-  ADVERTISEMENT_DEFAULT_TRANSITION,
-  ADVERTISEMENT_MEDIA_TYPES,
   ADVERTISEMENT_DISPLAY_MODES,
-  ADVERTISEMENT_TRANSITIONS,
+  ADVERTISEMENT_MEDIA_TYPES,
   ADVERTISEMENT_UPLOAD_SUBDIRECTORY,
   type AdvertisementDisplayMode,
   type AdvertisementMediaType,
@@ -60,46 +56,84 @@ export class AdvertisementsService extends PaginationService {
     createAdvertisementDto: CreateAdvertisementDto,
     file?: AdvertisementUploadFile,
   ): Promise<AdvertisementResponse> {
-    if (!file) {
-      throw new BadRequestException('Debe enviar una imagen o video');
-    }
-
-    const mediaType = this.resolveMediaTypeFromMime(file.mimetype);
-    if (!mediaType) {
-      await this.safeDeletePhysicalFile(
-        this.toUploadRelativePath(file.filename ?? ''),
-      );
-      throw new BadRequestException('Tipo de archivo no permitido');
-    }
-
     this.validateSchedule(
       createAdvertisementDto.startsAt ?? null,
       createAdvertisementDto.endsAt ?? null,
     );
 
-    const filePath = this.toUploadRelativePath(file.filename);
+    const mediaType = createAdvertisementDto.mediaType;
+    const normalizedTextContent = this.normalizeTextContent(
+      createAdvertisementDto.textContent,
+    );
+
+    let filePath: string | null = null;
+    let mimeType: string | null = null;
+    let fileSize: number | null = null;
+
+    if (mediaType === 'TEXT') {
+      if (file?.filename) {
+        await this.safeDeletePhysicalFile(
+          this.toUploadRelativePath(file.filename),
+        );
+      }
+
+      if (!normalizedTextContent) {
+        throw new BadRequestException(
+          'textContent es obligatorio cuando mediaType es TEXT',
+        );
+      }
+    } else {
+      if (normalizedTextContent !== null) {
+        if (file?.filename) {
+          await this.safeDeletePhysicalFile(
+            this.toUploadRelativePath(file.filename),
+          );
+        }
+
+        throw new BadRequestException(
+          'textContent solo aplica cuando mediaType es TEXT',
+        );
+      }
+
+      if (!file) {
+        throw new BadRequestException('Debe enviar una imagen o video');
+      }
+
+      const inferredMediaType = this.resolveMediaTypeFromMime(file.mimetype);
+      if (!inferredMediaType) {
+        await this.safeDeletePhysicalFile(
+          this.toUploadRelativePath(file.filename),
+        );
+        throw new BadRequestException('Tipo de archivo no permitido');
+      }
+
+      if (inferredMediaType !== mediaType) {
+        await this.safeDeletePhysicalFile(
+          this.toUploadRelativePath(file.filename),
+        );
+        throw new BadRequestException(
+          `El archivo no coincide con mediaType=${mediaType}`,
+        );
+      }
+
+      filePath = this.toUploadRelativePath(file.filename);
+      mimeType = file.mimetype;
+      fileSize = file.size;
+    }
 
     try {
       const [advertisement] = await this.db
         .insert(schema.advertisements)
         .values({
           title: createAdvertisementDto.title.trim(),
-          description: createAdvertisementDto.description?.trim() ?? null,
           mediaType,
-          fileName: file.originalname,
           filePath,
-          mimeType: file.mimetype,
-          fileSize: file.size,
+          mimeType,
+          fileSize,
+          textContent: mediaType === 'TEXT' ? normalizedTextContent : null,
           displayMode:
             createAdvertisementDto.displayMode ??
             ADVERTISEMENT_DEFAULT_DISPLAY_MODE,
-          transition:
-            createAdvertisementDto.transition ??
-            ADVERTISEMENT_DEFAULT_TRANSITION,
-          durationSeconds:
-            createAdvertisementDto.durationSeconds ??
-            ADVERTISEMENT_DEFAULT_DURATION_SECONDS,
-          sortOrder: createAdvertisementDto.sortOrder ?? 0,
           isActive: createAdvertisementDto.isActive ?? true,
           startsAt: createAdvertisementDto.startsAt ?? null,
           endsAt: createAdvertisementDto.endsAt ?? null,
@@ -108,7 +142,9 @@ export class AdvertisementsService extends PaginationService {
 
       return this.toResponse(advertisement);
     } catch (error) {
-      await this.safeDeletePhysicalFile(filePath);
+      if (filePath) {
+        await this.safeDeletePhysicalFile(filePath);
+      }
       throw error;
     }
   }
@@ -125,10 +161,7 @@ export class AdvertisementsService extends PaginationService {
         where,
         limit,
         offset: skip,
-        orderBy: (advertisements, { asc, desc }) => [
-          asc(advertisements.sortOrder),
-          desc(advertisements.createdAt),
-        ],
+        orderBy: (advertisements, { desc }) => [desc(advertisements.createdAt)],
       }),
       this.db
         .select({ value: count() })
@@ -152,6 +185,15 @@ export class AdvertisementsService extends PaginationService {
     updateAdvertisementDto: UpdateAdvertisementDto,
   ): Promise<AdvertisementResponse> {
     const current = await this.validateAdvertisementId(id);
+    if (
+      updateAdvertisementDto.mediaType !== undefined &&
+      updateAdvertisementDto.mediaType !== current.mediaType
+    ) {
+      throw new BadRequestException(
+        'No se permite cambiar mediaType en la actualizacion',
+      );
+    }
+
     const startsAt =
       updateAdvertisementDto.startsAt === undefined
         ? current.startsAt
@@ -163,24 +205,41 @@ export class AdvertisementsService extends PaginationService {
 
     this.validateSchedule(startsAt ?? null, endsAt ?? null);
 
+    const normalizedTextContent =
+      updateAdvertisementDto.textContent === undefined
+        ? undefined
+        : this.normalizeTextContent(updateAdvertisementDto.textContent);
+
+    const mediaType = current.mediaType;
+    if (mediaType === 'TEXT') {
+      const nextTextContent =
+        normalizedTextContent === undefined
+          ? current.textContent
+          : normalizedTextContent;
+
+      if (!nextTextContent) {
+        throw new BadRequestException(
+          'textContent es obligatorio cuando mediaType es TEXT',
+        );
+      }
+    } else if (
+      normalizedTextContent !== undefined &&
+      normalizedTextContent !== null
+    ) {
+      throw new BadRequestException(
+        'textContent solo aplica cuando mediaType es TEXT',
+      );
+    }
+
     const values = {
       ...(updateAdvertisementDto.title !== undefined
         ? { title: updateAdvertisementDto.title.trim() }
         : {}),
-      ...(updateAdvertisementDto.description !== undefined
-        ? { description: updateAdvertisementDto.description?.trim() ?? null }
+      ...(normalizedTextContent !== undefined
+        ? { textContent: normalizedTextContent }
         : {}),
       ...(updateAdvertisementDto.displayMode !== undefined
         ? { displayMode: updateAdvertisementDto.displayMode }
-        : {}),
-      ...(updateAdvertisementDto.transition !== undefined
-        ? { transition: updateAdvertisementDto.transition }
-        : {}),
-      ...(updateAdvertisementDto.durationSeconds !== undefined
-        ? { durationSeconds: updateAdvertisementDto.durationSeconds }
-        : {}),
-      ...(updateAdvertisementDto.sortOrder !== undefined
-        ? { sortOrder: updateAdvertisementDto.sortOrder }
         : {}),
       ...(updateAdvertisementDto.isActive !== undefined
         ? { isActive: updateAdvertisementDto.isActive }
@@ -214,7 +273,9 @@ export class AdvertisementsService extends PaginationService {
       .delete(schema.advertisements)
       .where(eq(schema.advertisements.id, id));
 
-    await this.safeDeletePhysicalFile(advertisement.filePath);
+    if (advertisement.filePath) {
+      await this.safeDeletePhysicalFile(advertisement.filePath);
+    }
 
     return { id, message: 'Publicidad eliminada correctamente' };
   }
@@ -230,10 +291,7 @@ export class AdvertisementsService extends PaginationService {
 
     const rows = await this.db.query.advertisements.findMany({
       where,
-      orderBy: [
-        asc(schema.advertisements.sortOrder),
-        desc(schema.advertisements.createdAt),
-      ],
+      orderBy: [desc(schema.advertisements.createdAt)],
     });
 
     return rows.map((row) => this.toResponse(row, now));
@@ -243,7 +301,6 @@ export class AdvertisementsService extends PaginationService {
     return {
       mediaTypes: [...ADVERTISEMENT_MEDIA_TYPES],
       displayModes: [...ADVERTISEMENT_DISPLAY_MODES],
-      transitions: [...ADVERTISEMENT_TRANSITIONS],
     };
   }
 
@@ -268,7 +325,7 @@ export class AdvertisementsService extends PaginationService {
         ? or(
             ilike(schema.advertisements.id, `%${search}%`),
             ilike(schema.advertisements.title, `%${search}%`),
-            ilike(schema.advertisements.description, `%${search}%`),
+            ilike(schema.advertisements.textContent, `%${search}%`),
           )
         : undefined,
       query.mediaType
@@ -315,6 +372,15 @@ export class AdvertisementsService extends PaginationService {
     if (startsAt && endsAt && endsAt <= startsAt) {
       throw new BadRequestException('endsAt debe ser mayor que startsAt');
     }
+  }
+
+  private normalizeTextContent(textContent?: string | null): string | null {
+    if (textContent === undefined || textContent === null) {
+      return null;
+    }
+
+    const trimmed = textContent.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   private resolveMediaTypeFromMime(
@@ -414,24 +480,20 @@ export class AdvertisementsService extends PaginationService {
     advertisement: AdvertisementRow,
     now: Date = new Date(),
   ): AdvertisementResponse {
-    const filePath = advertisement.filePath
-      .replace(/\\/g, '/')
-      .replace(/^\/+/, '');
+    const normalizedFilePath = advertisement.filePath
+      ? advertisement.filePath.replace(/\\/g, '/').replace(/^\/+/, '')
+      : null;
 
     return {
       id: advertisement.id,
       title: advertisement.title,
-      description: advertisement.description,
       mediaType: advertisement.mediaType,
-      fileName: advertisement.fileName,
       filePath: advertisement.filePath,
       mimeType: advertisement.mimeType,
       fileSize: advertisement.fileSize,
-      fileUrl: `/uploads/${filePath}`,
+      fileUrl: normalizedFilePath ? `/uploads/${normalizedFilePath}` : null,
+      textContent: advertisement.textContent,
       displayMode: advertisement.displayMode,
-      transition: advertisement.transition,
-      durationSeconds: advertisement.durationSeconds,
-      sortOrder: advertisement.sortOrder,
       isActive: advertisement.isActive,
       startsAt: advertisement.startsAt,
       endsAt: advertisement.endsAt,

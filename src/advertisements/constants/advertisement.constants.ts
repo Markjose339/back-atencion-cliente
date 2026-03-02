@@ -1,24 +1,12 @@
-export const ADVERTISEMENT_MEDIA_TYPES = ['IMAGE', 'VIDEO'] as const;
+export const ADVERTISEMENT_MEDIA_TYPES = ['IMAGE', 'VIDEO', 'TEXT'] as const;
 export type AdvertisementMediaType = (typeof ADVERTISEMENT_MEDIA_TYPES)[number];
 
-export const ADVERTISEMENT_DISPLAY_MODES = [
-  'FULLSCREEN',
-  'BANNER_TOP',
-  'BANNER_BOTTOM',
-  'SPLIT_LEFT',
-  'SPLIT_RIGHT',
-] as const;
+export const ADVERTISEMENT_DISPLAY_MODES = ['FULLSCREEN', 'TICKER'] as const;
 export type AdvertisementDisplayMode =
   (typeof ADVERTISEMENT_DISPLAY_MODES)[number];
 
-export const ADVERTISEMENT_TRANSITIONS = ['NONE', 'FADE', 'SLIDE'] as const;
-export type AdvertisementTransition =
-  (typeof ADVERTISEMENT_TRANSITIONS)[number];
-
 export const ADVERTISEMENT_DEFAULT_DISPLAY_MODE: AdvertisementDisplayMode =
   'FULLSCREEN';
-export const ADVERTISEMENT_DEFAULT_TRANSITION: AdvertisementTransition = 'NONE';
-export const ADVERTISEMENT_DEFAULT_DURATION_SECONDS = 10;
 
 export const ADVERTISEMENT_UPLOAD_FIELD = 'file';
 export const ADVERTISEMENT_UPLOAD_SUBDIRECTORY = 'advertisements';

@@ -1,23 +1,18 @@
 import type {
   AdvertisementDisplayMode,
   AdvertisementMediaType,
-  AdvertisementTransition,
 } from '@/advertisements/constants/advertisement.constants';
 
 export interface AdvertisementResponse {
   id: string;
   title: string;
-  description: string | null;
   mediaType: AdvertisementMediaType;
-  fileName: string;
-  filePath: string;
-  mimeType: string;
-  fileSize: number;
-  fileUrl: string;
+  filePath: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  fileUrl: string | null;
+  textContent: string | null;
   displayMode: AdvertisementDisplayMode;
-  transition: AdvertisementTransition;
-  durationSeconds: number;
-  sortOrder: number;
   isActive: boolean;
   startsAt: Date | null;
   endsAt: Date | null;

@@ -51,6 +51,11 @@ const buildUploadFileName = (originalName: string): string => {
 export class AdvertisementsController {
   constructor(private readonly advertisementsService: AdvertisementsService) {}
 
+  @Post()
+  createWithoutFile(@Body() createAdvertisementDto: CreateAdvertisementDto) {
+    return this.advertisementsService.create(createAdvertisementDto);
+  }
+
   @Post('upload')
   @UseFilters(AdvertisementUploadExceptionFilter)
   @UseInterceptors(
