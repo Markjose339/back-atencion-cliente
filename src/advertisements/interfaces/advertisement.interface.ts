@@ -7,16 +7,23 @@ export interface AdvertisementResponse {
   id: string;
   title: string;
   mediaType: AdvertisementMediaType;
-  filePath: string | null;
+  displayMode: AdvertisementDisplayMode;
+
+  // Media (IMAGE / VIDEO)
+  fileUrl: string | null;
   mimeType: string | null;
   fileSize: number | null;
-  fileUrl: string | null;
+
+  // Texto (TICKER)
   textContent: string | null;
-  displayMode: AdvertisementDisplayMode;
+
+  // Control
   isActive: boolean;
+  isVisibleNow: boolean;
   startsAt: Date | null;
   endsAt: Date | null;
-  isVisibleNow: boolean;
+
+  // Auditoría
   createdAt: Date;
   updatedAt: Date;
 }

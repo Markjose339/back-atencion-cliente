@@ -36,7 +36,6 @@ import {
 import { CreateAdvertisementDto } from './dto/create-advertisement.dto';
 import { FindAdvertisementsQueryDto } from './dto/find-advertisements-query.dto';
 import { UpdateAdvertisementDto } from './dto/update-advertisement.dto';
-import type { AdvertisementUploadFile } from './interfaces/advertisement-upload-file.interface';
 import { AdvertisementResponse } from './interfaces/advertisement.interface';
 
 type AdvertisementRow = typeof schema.advertisements.$inferSelect;
@@ -53,29 +52,23 @@ export class AdvertisementsService extends PaginationService {
   }
 
   async create(
-    createAdvertisementDto: CreateAdvertisementDto,
-    file?: AdvertisementUploadFile,
+    dto: CreateAdvertisementDto,
+    file?: Express.Multer.File,
   ): Promise<AdvertisementResponse> {
-    this.validateSchedule(
-      createAdvertisementDto.startsAt ?? null,
-      createAdvertisementDto.endsAt ?? null,
-    );
+    this.validateSchedule(dto.startsAt ?? null, dto.endsAt ?? null);
 
-    const mediaType = createAdvertisementDto.mediaType;
-    const normalizedTextContent = this.normalizeTextContent(
-      createAdvertisementDto.textContent,
-    );
+    const { mediaType } = dto;
+    const normalizedTextContent = this.normalizeTextContent(dto.textContent);
 
     let filePath: string | null = null;
     let mimeType: string | null = null;
     let fileSize: number | null = null;
 
     if (mediaType === 'TEXT') {
-      if (file?.filename) {
+      if (file)
         await this.safeDeletePhysicalFile(
           this.toUploadRelativePath(file.filename),
         );
-      }
 
       if (!normalizedTextContent) {
         throw new BadRequestException(
@@ -84,12 +77,10 @@ export class AdvertisementsService extends PaginationService {
       }
     } else {
       if (normalizedTextContent !== null) {
-        if (file?.filename) {
+        if (file)
           await this.safeDeletePhysicalFile(
             this.toUploadRelativePath(file.filename),
           );
-        }
-
         throw new BadRequestException(
           'textContent solo aplica cuando mediaType es TEXT',
         );
@@ -125,36 +116,30 @@ export class AdvertisementsService extends PaginationService {
       const [advertisement] = await this.db
         .insert(schema.advertisements)
         .values({
-          title: createAdvertisementDto.title.trim(),
+          title: dto.title.trim(),
           mediaType,
           filePath,
           mimeType,
           fileSize,
           textContent: mediaType === 'TEXT' ? normalizedTextContent : null,
-          displayMode:
-            createAdvertisementDto.displayMode ??
-            ADVERTISEMENT_DEFAULT_DISPLAY_MODE,
-          isActive: createAdvertisementDto.isActive ?? true,
-          startsAt: createAdvertisementDto.startsAt ?? null,
-          endsAt: createAdvertisementDto.endsAt ?? null,
+          displayMode: dto.displayMode ?? ADVERTISEMENT_DEFAULT_DISPLAY_MODE,
+          isActive: dto.isActive ?? true,
+          startsAt: dto.startsAt ?? null,
+          endsAt: dto.endsAt ?? null,
         })
         .returning();
 
       return this.toResponse(advertisement);
     } catch (error) {
-      if (filePath) {
-        await this.safeDeletePhysicalFile(filePath);
-      }
+      if (filePath) await this.safeDeletePhysicalFile(filePath);
       throw error;
     }
   }
 
-  async findAll(findAdvertisementsQueryDto: FindAdvertisementsQueryDto) {
-    const { page, limit } = this.validatePaginationParams(
-      findAdvertisementsQueryDto,
-    );
+  async findAll(query: FindAdvertisementsQueryDto) {
+    const { page, limit } = this.validatePaginationParams(query);
     const skip = this.calculateSkip(page, limit);
-    const where = this.buildFindWhere(findAdvertisementsQueryDto);
+    const where = this.buildFindWhere(query);
 
     const [rows, [{ value: total }]] = await Promise.all([
       this.db.query.advertisements.findMany({
@@ -182,46 +167,35 @@ export class AdvertisementsService extends PaginationService {
 
   async update(
     id: string,
-    updateAdvertisementDto: UpdateAdvertisementDto,
+    dto: UpdateAdvertisementDto,
   ): Promise<AdvertisementResponse> {
     const current = await this.validateAdvertisementId(id);
-    if (
-      updateAdvertisementDto.mediaType !== undefined &&
-      updateAdvertisementDto.mediaType !== current.mediaType
-    ) {
+
+    if (dto.mediaType !== undefined && dto.mediaType !== current.mediaType) {
       throw new BadRequestException(
         'No se permite cambiar mediaType en la actualizacion',
       );
     }
 
     const startsAt =
-      updateAdvertisementDto.startsAt === undefined
-        ? current.startsAt
-        : updateAdvertisementDto.startsAt;
-    const endsAt =
-      updateAdvertisementDto.endsAt === undefined
-        ? current.endsAt
-        : updateAdvertisementDto.endsAt;
-
+      dto.startsAt === undefined ? current.startsAt : dto.startsAt;
+    const endsAt = dto.endsAt === undefined ? current.endsAt : dto.endsAt;
     this.validateSchedule(startsAt ?? null, endsAt ?? null);
 
     const normalizedTextContent =
-      updateAdvertisementDto.textContent === undefined
+      dto.textContent === undefined
         ? undefined
-        : this.normalizeTextContent(updateAdvertisementDto.textContent);
+        : this.normalizeTextContent(dto.textContent);
 
-    const mediaType = current.mediaType;
-    if (mediaType === 'TEXT') {
-      const nextTextContent =
+    if (current.mediaType === 'TEXT') {
+      const next =
         normalizedTextContent === undefined
           ? current.textContent
           : normalizedTextContent;
-
-      if (!nextTextContent) {
+      if (!next)
         throw new BadRequestException(
           'textContent es obligatorio cuando mediaType es TEXT',
         );
-      }
     } else if (
       normalizedTextContent !== undefined &&
       normalizedTextContent !== null
@@ -232,30 +206,18 @@ export class AdvertisementsService extends PaginationService {
     }
 
     const values = {
-      ...(updateAdvertisementDto.title !== undefined
-        ? { title: updateAdvertisementDto.title.trim() }
-        : {}),
-      ...(normalizedTextContent !== undefined
-        ? { textContent: normalizedTextContent }
-        : {}),
-      ...(updateAdvertisementDto.displayMode !== undefined
-        ? { displayMode: updateAdvertisementDto.displayMode }
-        : {}),
-      ...(updateAdvertisementDto.isActive !== undefined
-        ? { isActive: updateAdvertisementDto.isActive }
-        : {}),
-      ...(updateAdvertisementDto.startsAt !== undefined
-        ? { startsAt: updateAdvertisementDto.startsAt ?? null }
-        : {}),
-      ...(updateAdvertisementDto.endsAt !== undefined
-        ? { endsAt: updateAdvertisementDto.endsAt ?? null }
-        : {}),
+      ...(dto.title !== undefined && { title: dto.title.trim() }),
+      ...(normalizedTextContent !== undefined && {
+        textContent: normalizedTextContent,
+      }),
+      ...(dto.displayMode !== undefined && { displayMode: dto.displayMode }),
+      ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      ...(dto.startsAt !== undefined && { startsAt: dto.startsAt ?? null }),
+      ...(dto.endsAt !== undefined && { endsAt: dto.endsAt ?? null }),
       updatedAt: sql`now()`,
     };
 
-    if (Object.keys(values).length === 1) {
-      return this.toResponse(current);
-    }
+    if (Object.keys(values).length === 1) return this.toResponse(current);
 
     const [updated] = await this.db
       .update(schema.advertisements)
@@ -267,17 +229,22 @@ export class AdvertisementsService extends PaginationService {
   }
 
   async remove(id: string) {
-    const advertisement = await this.validateAdvertisementId(id);
+    await this.validateAdvertisementId(id);
 
-    await this.db
+    const [advertisement] = await this.db
       .delete(schema.advertisements)
-      .where(eq(schema.advertisements.id, id));
+      .where(eq(schema.advertisements.id, id))
+      .returning({
+        id: schema.advertisements.id,
+        title: schema.advertisements.title,
+        filePath: schema.advertisements.filePath,
+      });
 
     if (advertisement.filePath) {
       await this.safeDeletePhysicalFile(advertisement.filePath);
     }
 
-    return { id, message: 'Publicidad eliminada correctamente' };
+    return advertisement;
   }
 
   async getActivePlaylist(displayMode?: AdvertisementDisplayMode) {
@@ -309,10 +276,8 @@ export class AdvertisementsService extends PaginationService {
       where: eq(schema.advertisements.id, id),
     });
 
-    if (!advertisement) {
+    if (!advertisement)
       throw new NotFoundException(`Publicidad con id ${id} no encontrada`);
-    }
-
     return advertisement;
   }
 
@@ -320,7 +285,7 @@ export class AdvertisementsService extends PaginationService {
     query: FindAdvertisementsQueryDto,
   ): SQL<unknown> | undefined {
     const search = query.search?.trim();
-    const where = this.combineWhere([
+    return this.combineWhere([
       search
         ? or(
             ilike(schema.advertisements.id, `%${search}%`),
@@ -339,19 +304,13 @@ export class AdvertisementsService extends PaginationService {
         : undefined,
       query.activeNow ? this.buildActiveNowFilter(new Date()) : undefined,
     ]);
-
-    return where;
   }
 
   private combineWhere(
     conditions: Array<SQL<unknown> | undefined>,
   ): SQL<unknown> | undefined {
-    const validConditions = conditions.filter(
-      (condition): condition is SQL<unknown> => condition !== undefined,
-    );
-
-    if (validConditions.length === 0) return undefined;
-    return and(...validConditions);
+    const valid = conditions.filter((c): c is SQL<unknown> => c !== undefined);
+    return valid.length === 0 ? undefined : and(...valid);
   }
 
   private buildActiveNowFilter(now: Date): SQL<unknown> {
@@ -374,12 +333,9 @@ export class AdvertisementsService extends PaginationService {
     }
   }
 
-  private normalizeTextContent(textContent?: string | null): string | null {
-    if (textContent === undefined || textContent === null) {
-      return null;
-    }
-
-    const trimmed = textContent.trim();
+  private normalizeTextContent(value?: string | null): string | null {
+    if (!value) return null;
+    const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
 
@@ -390,18 +346,14 @@ export class AdvertisementsService extends PaginationService {
       (ADVERTISEMENT_ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(
         mimeType,
       )
-    ) {
+    )
       return 'IMAGE';
-    }
-
     if (
       (ADVERTISEMENT_ALLOWED_VIDEO_MIME_TYPES as readonly string[]).includes(
         mimeType,
       )
-    ) {
+    )
       return 'VIDEO';
-    }
-
     return null;
   }
 
@@ -413,100 +365,83 @@ export class AdvertisementsService extends PaginationService {
   }
 
   private async safeDeletePhysicalFile(filePath: string): Promise<void> {
-    const candidates = this.resolveDeleteCandidates(filePath);
-    if (candidates.length === 0) return;
-
-    for (const absolutePath of candidates) {
+    for (const absolutePath of this.resolveDeleteCandidates(filePath)) {
       try {
         await unlink(absolutePath);
         return;
       } catch (error) {
-        if (this.isErrnoCode(error, 'ENOENT')) {
-          continue;
-        }
-
-        return;
+        if (!this.isErrnoCode(error, 'ENOENT')) return;
       }
     }
   }
 
   private resolveDeleteCandidates(filePath: string): string[] {
-    const normalizedPath = filePath.replace(/\\/g, '/').trim();
-    if (!normalizedPath) return [];
+    const normalized = filePath.replace(/\\/g, '/').trim();
+    if (!normalized) return [];
 
-    const cleanPath = normalizedPath.replace(/^\/+/, '');
-    const withoutUploadsPrefix = cleanPath.startsWith('uploads/')
-      ? cleanPath.slice('uploads/'.length)
-      : cleanPath;
-
-    const safeRelativePath = this.sanitizeRelativePath(withoutUploadsPrefix);
-    const safePathFromProjectRoot = this.sanitizeRelativePath(cleanPath);
-    const absoluteNormalizedPath = normalize(filePath);
+    const clean = normalized.replace(/^\/+/, '');
+    const withoutUploads = clean.startsWith('uploads/')
+      ? clean.slice('uploads/'.length)
+      : clean;
 
     const candidates = new Set<string>();
+    const safeRelative = this.sanitizeRelativePath(withoutUploads);
+    const safeFromRoot = this.sanitizeRelativePath(clean);
+    const absoluteNorm = normalize(filePath);
 
-    if (safeRelativePath) {
-      candidates.add(join(this.uploadsRootDir, safeRelativePath));
-    }
-
-    if (safePathFromProjectRoot) {
-      candidates.add(join(process.cwd(), safePathFromProjectRoot));
-    }
-
-    if (isAbsolute(absoluteNormalizedPath)) {
-      candidates.add(absoluteNormalizedPath);
-    }
+    if (safeRelative) candidates.add(join(this.uploadsRootDir, safeRelative));
+    if (safeFromRoot) candidates.add(join(process.cwd(), safeFromRoot));
+    if (isAbsolute(absoluteNorm)) candidates.add(absoluteNorm);
 
     return [...candidates];
   }
 
-  private sanitizeRelativePath(pathValue: string): string {
-    return pathValue
+  private sanitizeRelativePath(path: string): string {
+    return path
       .split('/')
-      .map((segment) => segment.trim())
-      .filter((segment) => segment && segment !== '.' && segment !== '..')
+      .map((s) => s.trim())
+      .filter((s) => s && s !== '.' && s !== '..')
       .join('/');
   }
 
   private isErrnoCode(error: unknown, code: string): boolean {
-    if (!error || typeof error !== 'object' || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === code;
+    return (
+      !!error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: string }).code === code
+    );
   }
 
   private toResponse(
-    advertisement: AdvertisementRow,
+    row: AdvertisementRow,
     now: Date = new Date(),
   ): AdvertisementResponse {
-    const normalizedFilePath = advertisement.filePath
-      ? advertisement.filePath.replace(/\\/g, '/').replace(/^\/+/, '')
-      : null;
+    const normalizedPath =
+      row.filePath?.replace(/\\/g, '/').replace(/^\/+/, '') ?? null;
 
     return {
-      id: advertisement.id,
-      title: advertisement.title,
-      mediaType: advertisement.mediaType,
-      filePath: advertisement.filePath,
-      mimeType: advertisement.mimeType,
-      fileSize: advertisement.fileSize,
-      fileUrl: normalizedFilePath ? `/uploads/${normalizedFilePath}` : null,
-      textContent: advertisement.textContent,
-      displayMode: advertisement.displayMode,
-      isActive: advertisement.isActive,
-      startsAt: advertisement.startsAt,
-      endsAt: advertisement.endsAt,
-      isVisibleNow: this.isVisibleNow(advertisement, now),
-      createdAt: advertisement.createdAt,
-      updatedAt: advertisement.updatedAt,
+      id: row.id,
+      title: row.title,
+      mediaType: row.mediaType,
+      displayMode: row.displayMode,
+      fileUrl: normalizedPath ? `/uploads/${normalizedPath}` : null,
+      mimeType: row.mimeType,
+      fileSize: row.fileSize,
+      textContent: row.textContent,
+      isActive: row.isActive,
+      isVisibleNow: this.isVisibleNow(row, now),
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 
-  private isVisibleNow(advertisement: AdvertisementRow, now: Date): boolean {
-    if (!advertisement.isActive) return false;
-    if (advertisement.startsAt && advertisement.startsAt > now) return false;
-    if (advertisement.endsAt && advertisement.endsAt < now) return false;
+  private isVisibleNow(row: AdvertisementRow, now: Date): boolean {
+    if (!row.isActive) return false;
+    if (row.startsAt && row.startsAt > now) return false;
+    if (row.endsAt && row.endsAt < now) return false;
     return true;
   }
 }

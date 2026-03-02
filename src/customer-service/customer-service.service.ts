@@ -444,18 +444,28 @@ export class CustomerServiceService extends PaginationService {
     await this.usersService.validatedUserId(userId);
 
     const called = await this.db.transaction(async (tx) => {
-      const inProgress = await tx.query.tickets.findFirst({
+      await tx.execute(
+        sql`SELECT ${schema.tickets.id}
+          FROM ${schema.tickets}
+          WHERE ${schema.tickets.userId} = ${userId}
+          FOR UPDATE`,
+      );
+
+      const active = await tx.query.tickets.findFirst({
         where: and(
           eq(schema.tickets.userId, userId),
-          eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
           isNull(schema.tickets.attentionFinishedAt),
+          or(
+            eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
+            eq(schema.tickets.status, 'ATENDIENDO' as TicketStatus),
+          ),
         ),
-        columns: { id: true },
+        columns: { id: true, code: true, status: true },
       });
 
-      if (inProgress) {
+      if (active) {
         throw new BadRequestException(
-          'No puedes llamar otro ticket mientras estas ATENDIENDO uno',
+          `No puedes llamar otro ticket: ya tienes "${active.code}" en estado ${active.status}. Finalízalo o cancélalo antes.`,
         );
       }
 
