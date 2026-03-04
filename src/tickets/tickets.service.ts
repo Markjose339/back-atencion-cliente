@@ -5,6 +5,9 @@ import { DB_CONN } from '@/database/db.conn';
 import { schema } from '@/database/schema';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { WebsocketGateway } from '@/websocket/websocket.gateway';
+import { HttpService } from '@nestjs/axios';
+import { catchError, firstValueFrom, of } from 'rxjs';
+import { ExternalPackageResponse } from './interfaces/external-package-response.interface';
 
 @Injectable()
 export class TicketsService {
@@ -17,11 +20,16 @@ export class TicketsService {
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly websocketGateway: WebsocketGateway,
+    private readonly httpService: HttpService,
   ) {}
 
   async create(dto: CreateTicketDto) {
     const todayRange = this.getTodayRange();
     const lockKey = this.getLockKey(dto.type, dto.branchId);
+
+    const packageZone = dto.packageCode
+      ? await this.fetchPackageZone(dto.packageCode)
+      : null;
 
     return this.db.transaction(async (tx) => {
       const branch = await tx.query.branches.findFirst({
@@ -59,6 +67,7 @@ export class TicketsService {
         .values({
           code,
           packageCode: dto.packageCode,
+          packageZone,
           type: dto.type,
           status: 'PENDIENTE',
           branchId: dto.branchId,
@@ -68,6 +77,7 @@ export class TicketsService {
           id: schema.tickets.id,
           code: schema.tickets.code,
           packageCode: schema.tickets.packageCode,
+          packageZone: schema.tickets.packageZone,
           type: schema.tickets.type,
           status: schema.tickets.status,
           createdAt: schema.tickets.createdAt,
@@ -151,5 +161,17 @@ export class TicketsService {
     if (!ticket) {
       throw new NotFoundException(`Ticket con el id ${id} no encontrado`);
     }
+  }
+
+  private async fetchPackageZone(packageCode: string): Promise<string | null> {
+    const response = await firstValueFrom(
+      this.httpService
+        .get<ExternalPackageResponse>(
+          `http://172.65.10.52:8012/api/public/zona-paquete?codigo=${packageCode}`,
+        )
+        .pipe(catchError(() => of(null))),
+    );
+
+    return response?.data?.zona ?? null;
   }
 }

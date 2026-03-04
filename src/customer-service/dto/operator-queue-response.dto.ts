@@ -17,6 +17,7 @@ export type CustomerServiceQueueTicket = {
   id: string;
   code: string;
   packageCode: string | null;
+  packageZone: string | null;
   type: 'REGULAR' | 'PREFERENCIAL';
   status:
     | 'PENDIENTE'

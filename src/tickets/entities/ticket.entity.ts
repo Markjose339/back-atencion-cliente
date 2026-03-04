@@ -34,6 +34,7 @@ export const tickets = pgTable(
       .$defaultFn(() => createId()),
     code: varchar('code', { length: 15 }).notNull(),
     packageCode: varchar('package_code', { length: 25 }),
+    packageZone: varchar('package_zone', { length: 30 }),
 
     type: TicketTypeEnum('type').default('REGULAR').notNull(),
     status: TicketStatusEnum('status').default('PENDIENTE').notNull(),
