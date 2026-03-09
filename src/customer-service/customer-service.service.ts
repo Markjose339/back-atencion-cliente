@@ -325,6 +325,7 @@ export class CustomerServiceService extends PaginationService {
       ? or(
           ilike(schema.tickets.code, `%${search}%`),
           ilike(schema.tickets.packageCode, `%${search}%`),
+          ilike(sql<string>`${schema.tickets.type}::text`, `%${search}%`),
         )
       : undefined;
 
