@@ -39,6 +39,7 @@ type TicketEventName =
   | 'ticket:called'
   | 'ticket:recalled'
   | 'ticket:started'
+  | 'ticket:resumed'
   | 'ticket:held'
   | 'ticket:finished'
   | 'ticket:cancelled';
@@ -230,6 +231,7 @@ export class CustomerServiceService extends PaginationService {
 
     this.websocketGateway.server.to(privateRoom).emit(event, ticket);
     this.websocketGateway.server.to(publicRoom).emit(event, ticket);
+    this.websocketGateway.emitRateTicketState(event, ticket);
 
     if (!emitUpdated) return;
 
@@ -853,7 +855,10 @@ export class CustomerServiceService extends PaginationService {
         );
       }
 
-      return updated;
+      return {
+        ...updated,
+        previousStatus: ticket.status,
+      };
     });
 
     if (!started) {
@@ -863,7 +868,13 @@ export class CustomerServiceService extends PaginationService {
     }
 
     const displayTicket = await this.getDisplayTicketOrThrow(started.id);
-    this.emitTicketEvent('ticket:started', displayTicket);
+
+    if (started.previousStatus === ('ESPERA' as TicketStatus)) {
+      this.emitTicketEvent('ticket:started', displayTicket, false);
+      this.emitTicketEvent('ticket:resumed', displayTicket);
+    } else {
+      this.emitTicketEvent('ticket:started', displayTicket);
+    }
 
     return {
       message: `Atencion del ticket "${started.code}" iniciada correctamente`,

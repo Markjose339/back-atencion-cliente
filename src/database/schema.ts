@@ -12,6 +12,7 @@ import * as branchWindowsSchema from '@/branches/entities/branch-windows.entity'
 import * as branchWindowServicesSchema from '@/branches/entities/branch_window_service.entity';
 import * as userBranchWindowsSchema from '@/users/entities/user-branch-windows.entity';
 import * as advertisementsSchema from '@/advertisements/entities/advertisement.entity';
+import * as ticketRatingsSchema from '@/ticket-ratings/entities/ticket-rating.entity';
 
 export const schema = {
   ...permissionSchema,
@@ -28,4 +29,5 @@ export const schema = {
   ...branchWindowServicesSchema,
   ...userBranchWindowsSchema,
   ...advertisementsSchema,
+  ...ticketRatingsSchema,
 };

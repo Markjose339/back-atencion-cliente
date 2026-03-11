@@ -20,6 +20,7 @@ import { PublicModule } from './public/public.module';
 import { AdvertisementsModule } from './advertisements/advertisements.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { QzModule } from './qz/qz.module';
+import { TicketRatingsModule } from './ticket-ratings/ticket-ratings.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { QzModule } from './qz/qz.module';
     AdvertisementsModule,
     DashboardModule,
     QzModule,
+    TicketRatingsModule,
   ],
   controllers: [],
   providers: [

@@ -10,11 +10,15 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Inject } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Server, Socket } from 'socket.io';
 import { AuthService } from '@/auth/auth.service';
 import type { User } from '@/users/interfaces/user.interface';
+import type {
+  PublicDisplayTicket,
+  TicketStatus,
+} from '@/public/interfaces/public.interface';
 
 type QueueJoinBody = {
   branchId: string;
@@ -23,6 +27,11 @@ type QueueJoinBody = {
 
 type DashboardJoinBody = {
   branchId?: string;
+};
+
+type RateJoinBody = {
+  branchId: string;
+  windowId: string;
 };
 
 type SocketData = {
@@ -46,15 +55,59 @@ type DashboardJoinAck =
   | { ok: true; rooms: string[] }
   | { ok: false; message: string };
 
+type RateRatingPayload = {
+  score: number;
+  ratedAt: Date;
+};
+
+type RateTicketEvent =
+  | 'ticket:called'
+  | 'ticket:recalled'
+  | 'ticket:started'
+  | 'ticket:resumed'
+  | 'ticket:held'
+  | 'ticket:finished'
+  | 'ticket:cancelled'
+  | 'ticket:rated'
+  | 'rate:snapshot';
+
+type RateTicketStatePayload = {
+  event: RateTicketEvent;
+  ticketId: string;
+  code: string;
+  type: 'REGULAR' | 'PREFERENCIAL';
+  status: TicketStatus;
+  branchId: string;
+  branchName: string;
+  serviceId: string;
+  serviceName: string;
+  serviceCode: string;
+  windowId: string;
+  windowName: string;
+  calledAt: Date | null;
+  createdAt: Date;
+  canRate: boolean;
+  isPaused: boolean;
+  isRated: boolean;
+  rating: RateRatingPayload | null;
+  at: string;
+};
+
+type RateJoinAck =
+  | { ok: true; room: string; ticket: RateTicketStatePayload | null }
+  | { ok: false; message: string };
+
 type DashboardInvalidatePayload = {
   event:
     | 'ticket:created'
     | 'ticket:called'
     | 'ticket:recalled'
     | 'ticket:started'
+    | 'ticket:resumed'
     | 'ticket:held'
     | 'ticket:finished'
-    | 'ticket:cancelled';
+    | 'ticket:cancelled'
+    | 'ticket:rated';
   ticketId?: string;
   branchId: string;
   serviceId?: string;
@@ -64,6 +117,8 @@ type DashboardInvalidatePayload = {
 type ServerToClientEvents = {
   'auth:ready': (payload: AuthReadyPayload) => void;
   'dashboard:invalidate': (payload: DashboardInvalidatePayload) => void;
+  'rate:ticket-state': (payload: RateTicketStatePayload) => void;
+  'rate:ticket-rated': (payload: RateTicketStatePayload) => void;
 };
 
 type AuthedSocket = Socket<
@@ -139,6 +194,35 @@ export class WebsocketGateway
     await client.join(room);
 
     return { ok: true, room };
+  }
+
+  @SubscribeMessage('rate:join')
+  async rateJoin(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() body: unknown,
+  ): Promise<RateJoinAck> {
+    const data = this.parseRateJoinBody(body);
+    if (!data) {
+      return { ok: false, message: 'branchId y windowId son requeridos' };
+    }
+
+    const validationMessage = await this.validateRateScope(
+      data.branchId,
+      data.windowId,
+    );
+    if (validationMessage) {
+      return { ok: false, message: validationMessage };
+    }
+
+    const room = this.getRateRoom(data.branchId, data.windowId);
+    await client.join(room);
+
+    const ticket = await this.findCurrentRateTicketState(
+      data.branchId,
+      data.windowId,
+    );
+
+    return { ok: true, room, ticket };
   }
 
   @SubscribeMessage('queue:register')
@@ -291,12 +375,53 @@ export class WebsocketGateway
       .emit('dashboard:invalidate', message);
   }
 
+  emitRateTicketState(
+    event: Exclude<RateTicketEvent, 'rate:snapshot' | 'ticket:rated'>,
+    ticket: PublicDisplayTicket,
+  ) {
+    this.emitRateStatePayload(event, ticket, null);
+  }
+
+  emitTicketRated(ticket: PublicDisplayTicket, rating: RateRatingPayload) {
+    const queueRoom = this.getQueueRoom(ticket.branchId, ticket.serviceId);
+    const publicRoom = this.getPublicRoom(ticket.branchId, ticket.serviceId);
+
+    this.server.to(queueRoom).emit('ticket:rated', {
+      ticketId: ticket.id,
+      branchId: ticket.branchId,
+      serviceId: ticket.serviceId,
+      windowId: ticket.windowId,
+      score: rating.score,
+      ratedAt: rating.ratedAt,
+    });
+    this.server.to(publicRoom).emit('ticket:rated', {
+      ticketId: ticket.id,
+      branchId: ticket.branchId,
+      serviceId: ticket.serviceId,
+      windowId: ticket.windowId,
+      score: rating.score,
+      ratedAt: rating.ratedAt,
+    });
+
+    this.emitRateStatePayload('ticket:rated', ticket, rating);
+    this.emitDashboardInvalidation({
+      event: 'ticket:rated',
+      ticketId: ticket.id,
+      branchId: ticket.branchId,
+      serviceId: ticket.serviceId,
+    });
+  }
+
   getQueueRoom(branchId: string, serviceId: string) {
     return `queue:${branchId}:${serviceId}`;
   }
 
   getPublicRoom(branchId: string, serviceId: string) {
     return `public:branch:${branchId}:service:${serviceId}`;
+  }
+
+  getRateRoom(branchId: string, windowId: string) {
+    return `rate:branch:${branchId}:window:${windowId}`;
   }
 
   getDashboardGlobalRoom() {
@@ -351,6 +476,22 @@ export class WebsocketGateway
       maybe.serviceId.length > 0
     ) {
       return { branchId: maybe.branchId, serviceId: maybe.serviceId };
+    }
+
+    return null;
+  }
+
+  private parseRateJoinBody(body: unknown): RateJoinBody | null {
+    if (!this.isRecord(body)) return null;
+
+    const maybe = body as Partial<RateJoinBody>;
+    if (
+      typeof maybe.branchId === 'string' &&
+      maybe.branchId.length > 0 &&
+      typeof maybe.windowId === 'string' &&
+      maybe.windowId.length > 0
+    ) {
+      return { branchId: maybe.branchId, windowId: maybe.windowId };
     }
 
     return null;
@@ -422,5 +563,172 @@ export class WebsocketGateway
     }
 
     return null;
+  }
+
+  private async validateRateScope(
+    branchId: string,
+    windowId: string,
+  ): Promise<string | null> {
+    const [scope] = await this.db
+      .select({ id: schema.branchWindows.id })
+      .from(schema.branchWindows)
+      .innerJoin(schema.branches, eq(schema.branchWindows.branchId, schema.branches.id))
+      .innerJoin(schema.windows, eq(schema.branchWindows.windowId, schema.windows.id))
+      .where(
+        and(
+          eq(schema.branchWindows.branchId, branchId),
+          eq(schema.branchWindows.windowId, windowId),
+          eq(schema.branchWindows.isActive, true),
+          eq(schema.branches.isActive, true),
+          eq(schema.windows.isActive, true),
+        ),
+      )
+      .limit(1);
+
+    if (!scope) {
+      return 'La ventanilla no existe o no esta activa para esta sucursal';
+    }
+
+    return null;
+  }
+
+  private emitRateStatePayload(
+    event: Exclude<RateTicketEvent, 'rate:snapshot'>,
+    ticket: PublicDisplayTicket,
+    rating: RateRatingPayload | null,
+  ) {
+    if (!ticket.windowId) return;
+
+    const payload = this.buildRateStatePayload(event, ticket, rating);
+    const room = this.getRateRoom(ticket.branchId, ticket.windowId);
+
+    this.server.to(room).emit('rate:ticket-state', payload);
+
+    if (event === 'ticket:rated') {
+      this.server.to(room).emit('rate:ticket-rated', payload);
+    }
+  }
+
+  private buildRateStatePayload(
+    event: RateTicketEvent,
+    ticket: PublicDisplayTicket,
+    rating: RateRatingPayload | null,
+  ): RateTicketStatePayload {
+    const isRated = rating !== null;
+    const canRate = ticket.status === 'FINALIZADO' && !isRated;
+
+    return {
+      event,
+      ticketId: ticket.id,
+      code: ticket.code,
+      type: ticket.type,
+      status: ticket.status,
+      branchId: ticket.branchId,
+      branchName: ticket.branchName,
+      serviceId: ticket.serviceId,
+      serviceName: ticket.serviceName,
+      serviceCode: ticket.serviceCode,
+      windowId: ticket.windowId,
+      windowName: ticket.windowName,
+      calledAt: ticket.calledAt,
+      createdAt: ticket.createdAt,
+      canRate,
+      isPaused: ticket.status === 'ESPERA',
+      isRated,
+      rating,
+      at: new Date().toISOString(),
+    };
+  }
+
+  private async findCurrentRateTicketState(
+    branchId: string,
+    windowId: string,
+  ): Promise<RateTicketStatePayload | null> {
+    const activeStatuses: TicketStatus[] = [
+      'LLAMADO',
+      'ATENDIENDO',
+      'ESPERA',
+      'FINALIZADO',
+    ];
+
+    const [row] = await this.db
+      .select({
+        ticketId: schema.tickets.id,
+        code: schema.tickets.code,
+        type: schema.tickets.type,
+        status: schema.tickets.status,
+        branchId: schema.tickets.branchId,
+        branchName: schema.branches.name,
+        serviceId: schema.tickets.serviceId,
+        serviceName: schema.services.name,
+        serviceCode: schema.services.code,
+        windowId: schema.windows.id,
+        windowName: schema.windows.name,
+        calledAt: schema.tickets.calledAt,
+        createdAt: schema.tickets.createdAt,
+        ratingScore: schema.ticketRatings.score,
+        ratingRatedAt: schema.ticketRatings.ratedAt,
+      })
+      .from(schema.tickets)
+      .innerJoin(schema.branches, eq(schema.tickets.branchId, schema.branches.id))
+      .innerJoin(schema.services, eq(schema.tickets.serviceId, schema.services.id))
+      .innerJoin(
+        schema.branchWindowServices,
+        eq(schema.tickets.branchWindowServiceId, schema.branchWindowServices.id),
+      )
+      .innerJoin(
+        schema.branchWindows,
+        eq(schema.branchWindowServices.branchWindowId, schema.branchWindows.id),
+      )
+      .innerJoin(schema.windows, eq(schema.branchWindows.windowId, schema.windows.id))
+      .leftJoin(schema.ticketRatings, eq(schema.ticketRatings.ticketId, schema.tickets.id))
+      .where(
+        and(
+          eq(schema.tickets.branchId, branchId),
+          eq(schema.windows.id, windowId),
+          inArray(schema.tickets.status, activeStatuses),
+        ),
+      )
+      .orderBy(
+        sql`CASE
+          WHEN ${schema.tickets.status} = 'ATENDIENDO' THEN 0
+          WHEN ${schema.tickets.status} = 'ESPERA' THEN 1
+          WHEN ${schema.tickets.status} = 'LLAMADO' THEN 2
+          WHEN ${schema.tickets.status} = 'FINALIZADO' THEN 3
+          ELSE 4
+        END`,
+        sql`${schema.tickets.updatedAt} DESC`,
+        sql`${schema.tickets.attentionFinishedAt} DESC NULLS LAST`,
+        desc(schema.tickets.createdAt),
+      )
+      .limit(1);
+
+    if (!row) return null;
+
+    const ticket: PublicDisplayTicket = {
+      id: row.ticketId,
+      code: row.code,
+      type: row.type,
+      status: row.status,
+      branchId: row.branchId,
+      branchName: row.branchName,
+      serviceId: row.serviceId,
+      serviceName: row.serviceName,
+      serviceCode: row.serviceCode,
+      windowId: row.windowId,
+      windowName: row.windowName,
+      calledAt: row.calledAt,
+      createdAt: row.createdAt,
+    };
+
+    const rating =
+      row.ratingScore !== null && row.ratingRatedAt !== null
+        ? {
+            score: row.ratingScore,
+            ratedAt: row.ratingRatedAt,
+          }
+        : null;
+
+    return this.buildRateStatePayload('rate:snapshot', ticket, rating);
   }
 }
