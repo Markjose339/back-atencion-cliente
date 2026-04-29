@@ -9,6 +9,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
 } from '@nestjs/common';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { AssignmentsService } from './assignments.service';
@@ -18,14 +19,22 @@ import { CreateOperatorAssignmentDto } from './dto/create-operator-assignment.dt
 import { UpdateOperatorAssignmentDto } from './dto/update-operator-assignment.dto';
 import { SyncWindowServicesDto } from './dto/sync-window-services.dto';
 import { SyncOperatorAssignmentsDto } from './dto/sync-operator-assignments.dto';
+import type { Request } from 'express';
+import type { User } from '@/users/interfaces/user.interface';
+import { buildAuditContext } from '@/audit/utils/build-audit-context';
+
+type UserRequest = Request & { user: User };
 
 @Controller('assignments')
 export class AssignmentsController {
   constructor(private readonly assignmentsService: AssignmentsService) {}
 
   @Post('window-services')
-  createWindowService(@Body() dto: CreateWindowServiceDto) {
-    return this.assignmentsService.createWindowService(dto);
+  createWindowService(@Body() dto: CreateWindowServiceDto, @Req() req: UserRequest) {
+    return this.assignmentsService.createWindowService(
+      dto,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Get('window-services')
@@ -39,26 +48,40 @@ export class AssignmentsController {
   }
 
   @Put('window-services/sync')
-  syncWindowServices(@Body() dto: SyncWindowServicesDto) {
-    return this.assignmentsService.syncWindowServices(dto);
+  syncWindowServices(@Body() dto: SyncWindowServicesDto, @Req() req: UserRequest) {
+    return this.assignmentsService.syncWindowServices(
+      dto,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Patch('window-services/:id')
   updateWindowService(
     @Param('id') id: string,
     @Body() dto: UpdateWindowServiceDto,
+    @Req() req: UserRequest,
   ) {
-    return this.assignmentsService.updateWindowService(id, dto);
+    return this.assignmentsService.updateWindowService(
+      id,
+      dto,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Delete('window-services/:id')
-  deleteWindowService(@Param('id') id: string) {
-    return this.assignmentsService.deleteWindowService(id);
+  deleteWindowService(@Param('id') id: string, @Req() req: UserRequest) {
+    return this.assignmentsService.deleteWindowService(
+      id,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Post('operators')
-  createOperator(@Body() dto: CreateOperatorAssignmentDto) {
-    return this.assignmentsService.createOperatorAssignment(dto);
+  createOperator(@Body() dto: CreateOperatorAssignmentDto, @Req() req: UserRequest) {
+    return this.assignmentsService.createOperatorAssignment(
+      dto,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Get('branches/:branchId/windows')
@@ -72,8 +95,11 @@ export class AssignmentsController {
   }
 
   @Put('operators/sync')
-  syncOperators(@Body() dto: SyncOperatorAssignmentsDto) {
-    return this.assignmentsService.syncOperatorAssignments(dto);
+  syncOperators(@Body() dto: SyncOperatorAssignmentsDto, @Req() req: UserRequest) {
+    return this.assignmentsService.syncOperatorAssignments(
+      dto,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Get('operators')
@@ -90,12 +116,20 @@ export class AssignmentsController {
   updateOperator(
     @Param('id') id: string,
     @Body() dto: UpdateOperatorAssignmentDto,
+    @Req() req: UserRequest,
   ) {
-    return this.assignmentsService.updateOperatorAssignment(id, dto);
+    return this.assignmentsService.updateOperatorAssignment(
+      id,
+      dto,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Delete('operators/:id')
-  deleteOperator(@Param('id') id: string) {
-    return this.assignmentsService.deleteOperatorAssignment(id);
+  deleteOperator(@Param('id') id: string, @Req() req: UserRequest) {
+    return this.assignmentsService.deleteOperatorAssignment(
+      id,
+      buildAuditContext(req, req.user.id),
+    );
   }
 }

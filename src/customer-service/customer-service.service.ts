@@ -26,6 +26,8 @@ import {
 import { and, count, desc, eq, ilike, isNull, ne, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PublicDisplayTicket } from '@/public/interfaces/public.interface';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 type TicketStatus =
   | 'PENDIENTE'
@@ -73,6 +75,7 @@ export class CustomerServiceService extends PaginationService {
     private readonly usersService: UsersService,
     private readonly websocketGateway: WebsocketGateway,
     private readonly publicService: PublicService,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
@@ -292,6 +295,29 @@ export class CustomerServiceService extends PaginationService {
     };
   }
 
+  private async auditTicketEvent(
+    params: {
+      action: string;
+      ticketId: string;
+      oldValues?: Record<string, unknown> | null;
+      newValues?: Record<string, unknown> | null;
+      description: string;
+    },
+    context?: AuditContext,
+  ) {
+    await this.auditService.registerAuditLog(
+      {
+        action: params.action,
+        auditableType: 'Ticket',
+        auditableId: params.ticketId,
+        oldValues: params.oldValues ?? null,
+        newValues: params.newValues ?? null,
+        description: params.description,
+      },
+      context,
+    );
+  }
+
   async findPendingTicketsByUserServiceWindow(
     userId: string,
     branchId: string,
@@ -445,7 +471,12 @@ export class CustomerServiceService extends PaginationService {
     return { data, meta };
   }
 
-  async callNextTicket(branchId: string, serviceId: string, userId: string) {
+  async callNextTicket(
+    branchId: string,
+    serviceId: string,
+    userId: string,
+    auditContext?: AuditContext,
+  ) {
     await this.usersService.validatedUserId(userId);
 
     const called = await this.db.transaction(async (tx) => {
@@ -570,10 +601,33 @@ export class CustomerServiceService extends PaginationService {
     const displayTicket = await this.getDisplayTicketOrThrow(called.id);
     this.emitTicketEvent('ticket:called', displayTicket);
 
+    await this.auditTicketEvent(
+      {
+        action: 'ticket_called',
+        ticketId: called.id,
+        oldValues: {
+          status: 'PENDIENTE',
+          userId: null,
+          branchWindowServiceId: null,
+        },
+        newValues: {
+          status: called.status,
+          userId: called.userId,
+          branchWindowServiceId: called.branchWindowServiceId,
+        },
+        description: `Ticket ${called.code} llamado`,
+      },
+      auditContext,
+    );
+
     return called;
   }
 
-  async holdTicket(ticketId: string, userId: string) {
+  async holdTicket(
+    ticketId: string,
+    userId: string,
+    auditContext?: AuditContext,
+  ) {
     await Promise.all([
       this.ticketsService.validatedTicketId(ticketId),
       this.usersService.validatedUserId(userId),
@@ -614,12 +668,27 @@ export class CustomerServiceService extends PaginationService {
     const displayTicket = await this.getDisplayTicketOrThrow(held.id);
     this.emitTicketEvent('ticket:held', displayTicket);
 
+    await this.auditTicketEvent(
+      {
+        action: 'ticket_abandoned',
+        ticketId: held.id,
+        oldValues: { status: 'ATENDIENDO' },
+        newValues: { status: 'ESPERA' },
+        description: `Ticket ${held.code} marcado en espera/abandono`,
+      },
+      auditContext,
+    );
+
     return {
       message: `Ticket "${held.code}" puesto en espera correctamente`,
     };
   }
 
-  async recallTicket(ticketId: string, userId: string) {
+  async recallTicket(
+    ticketId: string,
+    userId: string,
+    auditContext?: AuditContext,
+  ) {
     await Promise.all([
       this.ticketsService.validatedTicketId(ticketId),
       this.usersService.validatedUserId(userId),
@@ -727,13 +796,28 @@ export class CustomerServiceService extends PaginationService {
     this.emitTicketEvent('ticket:called', displayTicket, false);
     this.emitTicketEvent('ticket:recalled', displayTicket);
 
+    await this.auditTicketEvent(
+      {
+        action: 'ticket_recalled',
+        ticketId: recalled.id,
+        oldValues: { status: ticket.status },
+        newValues: { status: recalled.status },
+        description: `Ticket ${recalled.code} re-llamado`,
+      },
+      auditContext,
+    );
+
     return {
       message: `Ticket "${recalled.code}" re-llamado correctamente`,
       ticket: recalled,
     };
   }
 
-  async startTicketAttention(ticketId: string, userId: string) {
+  async startTicketAttention(
+    ticketId: string,
+    userId: string,
+    auditContext?: AuditContext,
+  ) {
     await Promise.all([
       this.ticketsService.validatedTicketId(ticketId),
       this.usersService.validatedUserId(userId),
@@ -876,12 +960,33 @@ export class CustomerServiceService extends PaginationService {
       this.emitTicketEvent('ticket:started', displayTicket);
     }
 
+    await this.auditTicketEvent(
+      {
+        action:
+          started.previousStatus === ('ESPERA' as TicketStatus)
+            ? 'ticket_resumed'
+            : 'ticket_attention_started',
+        ticketId: started.id,
+        oldValues: { status: started.previousStatus },
+        newValues: { status: 'ATENDIENDO' },
+        description:
+          started.previousStatus === ('ESPERA' as TicketStatus)
+            ? `Ticket ${started.code} reanudado`
+            : `Atencion iniciada para ticket ${started.code}`,
+      },
+      auditContext,
+    );
+
     return {
       message: `Atencion del ticket "${started.code}" iniciada correctamente`,
     };
   }
 
-  async finishTicketAttention(ticketId: string, userId: string) {
+  async finishTicketAttention(
+    ticketId: string,
+    userId: string,
+    auditContext?: AuditContext,
+  ) {
     await Promise.all([
       this.ticketsService.validatedTicketId(ticketId),
       this.usersService.validatedUserId(userId),
@@ -916,17 +1021,49 @@ export class CustomerServiceService extends PaginationService {
     const displayTicket = await this.getDisplayTicketOrThrow(finished.id);
     this.emitTicketEvent('ticket:finished', displayTicket);
 
+    await this.auditTicketEvent(
+      {
+        action: 'ticket_attention_finished',
+        ticketId: finished.id,
+        oldValues: { status: 'ATENDIENDO' },
+        newValues: { status: 'FINALIZADO' },
+        description: `Atencion finalizada para ticket ${finished.code}`,
+      },
+      auditContext,
+    );
+
     return {
       message: `Atencion del ticket "${finished.code}" finalizada correctamente`,
     };
   }
 
-  async cancelTicket(ticketId: string, userId?: string) {
+  async cancelTicket(
+    ticketId: string,
+    userId?: string,
+    auditContext?: AuditContext,
+  ) {
     await this.ticketsService.validatedTicketId(ticketId);
 
     const userCondition = userId
       ? or(isNull(schema.tickets.userId), eq(schema.tickets.userId, userId))
       : sql`true`;
+
+    const previous = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(schema.tickets.id, ticketId),
+        userCondition,
+        or(
+          eq(schema.tickets.status, 'PENDIENTE' as TicketStatus),
+          eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
+          eq(schema.tickets.status, 'ESPERA' as TicketStatus),
+        ),
+      ),
+      columns: {
+        id: true,
+        code: true,
+        status: true,
+      },
+    });
 
     const [cancelled] = await this.db
       .update(schema.tickets)
@@ -959,6 +1096,17 @@ export class CustomerServiceService extends PaginationService {
 
     const displayTicket = await this.getDisplayTicketOrThrow(cancelled.id);
     this.emitTicketEvent('ticket:cancelled', displayTicket);
+
+    await this.auditTicketEvent(
+      {
+        action: 'ticket_cancelled',
+        ticketId: cancelled.id,
+        oldValues: { status: previous?.status ?? null },
+        newValues: { status: 'CANCELADO' },
+        description: `Ticket ${cancelled.code} cancelado`,
+      },
+      auditContext,
+    );
 
     return { message: `Ticket "${cancelled.code}" cancelado` };
   }

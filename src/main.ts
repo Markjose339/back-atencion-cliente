@@ -13,7 +13,8 @@ const HTTP_KEEP_ALIVE_TIMEOUT_MS = 75 * 1000;
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  const frontendOrigin = process.env.FRONTEND_ORIGIN ?? process.env.FRONTEND_URL;
+  const frontendOrigin =
+    process.env.FRONTEND_ORIGIN ?? process.env.FRONTEND_URL;
 
   if (!frontendOrigin) {
     throw new Error(

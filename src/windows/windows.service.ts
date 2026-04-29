@@ -12,17 +12,20 @@ import { schema } from '@/database/schema';
 import { PaginationService } from '@/pagination/pagination.service';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { and, count, eq, ilike, ne, or, sql } from 'drizzle-orm';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class WindowsService extends PaginationService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
 
-  async create(createWindowDto: CreateWindowDto) {
+  async create(createWindowDto: CreateWindowDto, auditContext?: AuditContext) {
     await Promise.all([
       this.validateWindowName(createWindowDto.name),
       this.validateWindowCode(createWindowDto.code),
@@ -37,6 +40,16 @@ export class WindowsService extends PaginationService {
         name: schema.windows.name,
         createdAt: schema.windows.createdAt,
       });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'window_created',
+        auditableType: 'Window',
+        auditableId: window.id,
+        description: `Ventanilla ${window.code} creada`,
+      },
+      auditContext,
+    );
 
     return window;
   }
@@ -78,10 +91,13 @@ export class WindowsService extends PaginationService {
     return await this.validateWindowId(id);
   }
 
-  async update(id: string, updateWindowDto: UpdateWindowDto) {
-    const validations: Promise<void>[] = [
-      this.validateWindowId(id).then(() => undefined),
-    ];
+  async update(
+    id: string,
+    updateWindowDto: UpdateWindowDto,
+    auditContext?: AuditContext,
+  ) {
+    const currentWindow = await this.validateWindowId(id);
+    const validations: Promise<void>[] = [];
 
     if (updateWindowDto.name) {
       validations.push(this.validateWindowName(updateWindowDto.name, id));
@@ -101,14 +117,49 @@ export class WindowsService extends PaginationService {
         id: schema.windows.id,
         code: schema.windows.code,
         name: schema.windows.name,
+        isActive: schema.windows.isActive,
         createdAt: schema.windows.createdAt,
       });
+
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+
+    if (currentWindow.name !== window.name) {
+      oldValues.name = currentWindow.name;
+      newValues.name = window.name;
+    }
+
+    if (currentWindow.code !== window.code) {
+      oldValues.code = currentWindow.code;
+      newValues.code = window.code;
+    }
+
+    if (currentWindow.isActive !== window.isActive) {
+      oldValues.isActive = currentWindow.isActive;
+      newValues.isActive = window.isActive;
+    }
+
+    if (Object.keys(oldValues).length === 0 && Object.keys(newValues).length === 0) {
+      return window;
+    }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'window_updated',
+        auditableType: 'Window',
+        auditableId: window.id,
+        oldValues: Object.keys(oldValues).length > 0 ? oldValues : null,
+        newValues: Object.keys(newValues).length > 0 ? newValues : null,
+        description: `Ventanilla ${window.code} actualizada`,
+      },
+      auditContext,
+    );
 
     return window;
   }
 
-  async remove(id: string) {
-    await this.validateWindowId(id);
+  async remove(id: string, auditContext?: AuditContext) {
+    const currentWindow = await this.validateWindowId(id);
 
     const [window] = await this.db
       .delete(schema.windows)
@@ -119,6 +170,21 @@ export class WindowsService extends PaginationService {
         name: schema.windows.name,
         createdAt: schema.windows.createdAt,
       });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'window_deleted',
+        auditableType: 'Window',
+        auditableId: window.id,
+        oldValues: {
+          name: currentWindow.name,
+          code: currentWindow.code,
+          isActive: currentWindow.isActive,
+        },
+        description: `Ventanilla ${currentWindow.code} eliminada`,
+      },
+      auditContext,
+    );
 
     return window;
   }

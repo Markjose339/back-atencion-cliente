@@ -14,6 +14,8 @@ import { DB_CONN } from '@/database/db.conn';
 import { PaginationService } from '@/pagination/pagination.service';
 import { RolesService } from '@/roles/roles.service';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class UsersService extends PaginationService {
@@ -21,10 +23,11 @@ export class UsersService extends PaginationService {
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly rolesService: RolesService,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
-  async create(createUserDto: CreateUserDto) {
+  async create(createUserDto: CreateUserDto, auditContext?: AuditContext) {
     const { name, email, password, address, phone, isActive, roleIds } =
       createUserDto;
 
@@ -35,7 +38,7 @@ export class UsersService extends PaginationService {
 
     const hashPassword = await this.hashPassword(password);
 
-    return await this.db.transaction(async (tx) => {
+    const createdUser = await this.db.transaction(async (tx) => {
       const [user] = await tx
         .insert(schema.users)
         .values({
@@ -59,6 +62,18 @@ export class UsersService extends PaginationService {
 
       return await this.getUserWithRoles(user.id, tx);
     });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'user_created',
+        auditableType: 'User',
+        auditableId: createdUser.id,
+        description: `Usuario ${createdUser.email} creado`,
+      },
+      auditContext,
+    );
+
+    return createdUser;
   }
   async findAll(paginationDto: PaginationDto) {
     const { page, limit } = this.validatePaginationParams(paginationDto);
@@ -123,12 +138,15 @@ export class UsersService extends PaginationService {
     return await this.validatedUserId(id);
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  async update(
+    id: string,
+    updateUserDto: UpdateUserDto,
+    auditContext?: AuditContext,
+  ) {
     const { email, password, roleIds, ...restData } = updateUserDto;
+    const currentUser = await this.validatedUserId(id);
 
-    const validations: Promise<void>[] = [
-      this.validatedUserId(id).then(() => undefined),
-    ];
+    const validations: Promise<void>[] = [];
 
     if (email) {
       validations.push(this.validatedUserEmail(email, id));
@@ -150,7 +168,7 @@ export class UsersService extends PaginationService {
       updateData.password = await this.hashPassword(password);
     }
 
-    return this.db.transaction(async (tx) => {
+    const updatedUser = await this.db.transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
         await tx
           .update(schema.users)
@@ -175,12 +193,72 @@ export class UsersService extends PaginationService {
 
       return await this.getUserWithRoles(id, tx);
     });
+
+    const oldRoleIds = currentUser.roles.map((role) => role.id).sort();
+    const newRoleIds = updatedUser.roles.map((role) => role.id).sort();
+    const rolesChanged =
+      JSON.stringify(oldRoleIds) !== JSON.stringify(newRoleIds);
+
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+
+    if (currentUser.name !== updatedUser.name) {
+      oldValues.name = currentUser.name;
+      newValues.name = updatedUser.name;
+    }
+
+    if (currentUser.email !== updatedUser.email) {
+      oldValues.email = currentUser.email;
+      newValues.email = updatedUser.email;
+    }
+
+    if (currentUser.address !== updatedUser.address) {
+      oldValues.address = currentUser.address;
+      newValues.address = updatedUser.address;
+    }
+
+    if (currentUser.phone !== updatedUser.phone) {
+      oldValues.phone = currentUser.phone;
+      newValues.phone = updatedUser.phone;
+    }
+
+    if (currentUser.isActive !== updatedUser.isActive) {
+      oldValues.isActive = currentUser.isActive;
+      newValues.isActive = updatedUser.isActive;
+    }
+
+    if (rolesChanged) {
+      oldValues.roleIds = oldRoleIds;
+      newValues.roleIds = newRoleIds;
+    }
+
+    if (password) {
+      newValues.passwordChanged = true;
+    }
+
+    if (Object.keys(oldValues).length === 0 && Object.keys(newValues).length === 0) {
+      return updatedUser;
+    }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'user_updated',
+        auditableType: 'User',
+        auditableId: id,
+        oldValues: Object.keys(oldValues).length > 0 ? oldValues : null,
+        newValues: Object.keys(newValues).length > 0 ? newValues : null,
+        description: `Usuario ${updatedUser.email} actualizado`,
+      },
+      auditContext,
+    );
+
+    return updatedUser;
   }
 
-  async remove(id: string) {
-    await this.validatedUserId(id);
+  async remove(id: string, auditContext?: AuditContext) {
+    const currentUser = await this.validatedUserId(id);
 
-    return this.db.transaction(async (tx) => {
+    const removedUser = await this.db.transaction(async (tx) => {
       await tx.delete(schema.userRoles).where(eq(schema.userRoles.userId, id));
 
       const [user] = await tx
@@ -194,6 +272,23 @@ export class UsersService extends PaginationService {
 
       return user;
     });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'user_deleted',
+        auditableType: 'User',
+        auditableId: id,
+        oldValues: {
+          name: currentUser.name,
+          email: currentUser.email,
+          roleIds: currentUser.roles.map((role) => role.id),
+        },
+        description: `Usuario ${currentUser.email} eliminado`,
+      },
+      auditContext,
+    );
+
+    return removedUser;
   }
 
   private async hashPassword(password: string): Promise<string> {

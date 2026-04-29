@@ -37,6 +37,8 @@ import { CreateAdvertisementDto } from './dto/create-advertisement.dto';
 import { FindAdvertisementsQueryDto } from './dto/find-advertisements-query.dto';
 import { UpdateAdvertisementDto } from './dto/update-advertisement.dto';
 import { AdvertisementResponse } from './interfaces/advertisement.interface';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 type AdvertisementRow = typeof schema.advertisements.$inferSelect;
 
@@ -47,6 +49,7 @@ export class AdvertisementsService extends PaginationService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
@@ -54,6 +57,7 @@ export class AdvertisementsService extends PaginationService {
   async create(
     dto: CreateAdvertisementDto,
     file?: Express.Multer.File,
+    auditContext?: AuditContext,
   ): Promise<AdvertisementResponse> {
     this.validateSchedule(dto.startsAt ?? null, dto.endsAt ?? null);
 
@@ -129,6 +133,21 @@ export class AdvertisementsService extends PaginationService {
         })
         .returning();
 
+      await this.auditService.registerAuditLog(
+        {
+          action: 'advertisement_created',
+          auditableType: 'Advertisement',
+          auditableId: advertisement.id,
+          newValues: {
+            mediaType: advertisement.mediaType,
+            displayMode: advertisement.displayMode,
+            isActive: advertisement.isActive,
+          },
+          description: `Publicidad ${advertisement.title} creada`,
+        },
+        auditContext,
+      );
+
       return this.toResponse(advertisement);
     } catch (error) {
       if (filePath) await this.safeDeletePhysicalFile(filePath);
@@ -168,6 +187,7 @@ export class AdvertisementsService extends PaginationService {
   async update(
     id: string,
     dto: UpdateAdvertisementDto,
+    auditContext?: AuditContext,
   ): Promise<AdvertisementResponse> {
     const current = await this.validateAdvertisementId(id);
 
@@ -225,11 +245,58 @@ export class AdvertisementsService extends PaginationService {
       .where(eq(schema.advertisements.id, id))
       .returning();
 
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+
+    if (current.title !== updated.title) {
+      oldValues.title = current.title;
+      newValues.title = updated.title;
+    }
+
+    if (current.textContent !== updated.textContent) {
+      oldValues.textContent = current.textContent;
+      newValues.textContent = updated.textContent;
+    }
+
+    if (current.displayMode !== updated.displayMode) {
+      oldValues.displayMode = current.displayMode;
+      newValues.displayMode = updated.displayMode;
+    }
+
+    if (current.isActive !== updated.isActive) {
+      oldValues.isActive = current.isActive;
+      newValues.isActive = updated.isActive;
+    }
+
+    if (current.startsAt?.getTime() !== updated.startsAt?.getTime()) {
+      oldValues.startsAt = current.startsAt;
+      newValues.startsAt = updated.startsAt;
+    }
+
+    if (current.endsAt?.getTime() !== updated.endsAt?.getTime()) {
+      oldValues.endsAt = current.endsAt;
+      newValues.endsAt = updated.endsAt;
+    }
+
+    if (Object.keys(oldValues).length > 0 || Object.keys(newValues).length > 0) {
+      await this.auditService.registerAuditLog(
+        {
+          action: 'advertisement_updated',
+          auditableType: 'Advertisement',
+          auditableId: updated.id,
+          oldValues,
+          newValues,
+          description: `Publicidad ${updated.title} actualizada`,
+        },
+        auditContext,
+      );
+    }
+
     return this.toResponse(updated);
   }
 
-  async remove(id: string) {
-    await this.validateAdvertisementId(id);
+  async remove(id: string, auditContext?: AuditContext) {
+    const current = await this.validateAdvertisementId(id);
 
     const [advertisement] = await this.db
       .delete(schema.advertisements)
@@ -243,6 +310,21 @@ export class AdvertisementsService extends PaginationService {
     if (advertisement.filePath) {
       await this.safeDeletePhysicalFile(advertisement.filePath);
     }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'advertisement_deleted',
+        auditableType: 'Advertisement',
+        auditableId: advertisement.id,
+        oldValues: {
+          title: current.title,
+          mediaType: current.mediaType,
+          isActive: current.isActive,
+        },
+        description: `Publicidad ${current.title} eliminada`,
+      },
+      auditContext,
+    );
 
     return advertisement;
   }

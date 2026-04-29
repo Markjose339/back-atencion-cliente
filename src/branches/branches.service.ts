@@ -12,16 +12,19 @@ import { schema } from '@/database/schema';
 import { PaginationService } from '@/pagination/pagination.service';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { and, count, eq, ilike, ne, or, sql } from 'drizzle-orm';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class BranchesService extends PaginationService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
-  async create(createBranchDto: CreateBranchDto) {
+  async create(createBranchDto: CreateBranchDto, auditContext?: AuditContext) {
     await this.validateBranchName(createBranchDto.name);
 
     const [branch] = await this.db
@@ -32,6 +35,16 @@ export class BranchesService extends PaginationService {
         name: schema.branches.name,
         createdAt: schema.branches.createdAt,
       });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'branch_created',
+        auditableType: 'Branch',
+        auditableId: branch.id,
+        description: `Sucursal ${branch.name} creada`,
+      },
+      auditContext,
+    );
 
     return branch;
   }
@@ -74,10 +87,13 @@ export class BranchesService extends PaginationService {
     return await this.validateBranchId(id);
   }
 
-  async update(id: string, updateBranchDto: UpdateBranchDto) {
-    const validations: Promise<void>[] = [
-      this.validateBranchId(id).then(() => undefined),
-    ];
+  async update(
+    id: string,
+    updateBranchDto: UpdateBranchDto,
+    auditContext?: AuditContext,
+  ) {
+    const currentBranch = await this.validateBranchId(id);
+    const validations: Promise<void>[] = [];
 
     if (updateBranchDto.name) {
       validations.push(this.validateBranchName(updateBranchDto.name, id));
@@ -92,14 +108,48 @@ export class BranchesService extends PaginationService {
       .returning({
         id: schema.branches.id,
         name: schema.branches.name,
+        address: schema.branches.address,
+        departmentName: schema.branches.departmentName,
         createdAt: schema.branches.createdAt,
       });
+
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+
+    if (currentBranch.name !== branch.name) {
+      oldValues.name = currentBranch.name;
+      newValues.name = branch.name;
+    }
+
+    if (currentBranch.address !== branch.address) {
+      oldValues.address = currentBranch.address;
+      newValues.address = branch.address;
+    }
+
+    if (currentBranch.departmentName !== branch.departmentName) {
+      oldValues.departmentName = currentBranch.departmentName;
+      newValues.departmentName = branch.departmentName;
+    }
+
+    if (Object.keys(oldValues).length > 0 || Object.keys(newValues).length > 0) {
+      await this.auditService.registerAuditLog(
+        {
+          action: 'branch_updated',
+          auditableType: 'Branch',
+          auditableId: branch.id,
+          oldValues,
+          newValues,
+          description: `Sucursal ${branch.name} actualizada`,
+        },
+        auditContext,
+      );
+    }
 
     return branch;
   }
 
-  async remove(id: string) {
-    await this.validateBranchId(id);
+  async remove(id: string, auditContext?: AuditContext) {
+    const currentBranch = await this.validateBranchId(id);
 
     const [branch] = await this.db
       .delete(schema.branches)
@@ -109,6 +159,21 @@ export class BranchesService extends PaginationService {
         name: schema.branches.name,
         createdAt: schema.branches.createdAt,
       });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'branch_deleted',
+        auditableType: 'Branch',
+        auditableId: branch.id,
+        oldValues: {
+          name: currentBranch.name,
+          address: currentBranch.address,
+          departmentName: currentBranch.departmentName,
+        },
+        description: `Sucursal ${currentBranch.name} eliminada`,
+      },
+      auditContext,
+    );
 
     return branch;
   }

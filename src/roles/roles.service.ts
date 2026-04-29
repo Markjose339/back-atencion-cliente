@@ -13,6 +13,8 @@ import { DB_CONN } from '@/database/db.conn';
 import { schema } from '@/database/schema';
 import { and, count, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import { PaginationService } from '@/pagination/pagination.service';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class RolesService extends PaginationService {
@@ -20,11 +22,12 @@ export class RolesService extends PaginationService {
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly permissionsService: PermissionsService,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
 
-  async create(createRoleDto: CreateRoleDto) {
+  async create(createRoleDto: CreateRoleDto, auditContext?: AuditContext) {
     const { name, permissionIds } = createRoleDto;
 
     await Promise.all([
@@ -32,7 +35,7 @@ export class RolesService extends PaginationService {
       this.permissionsService.validatedPermissionIds(permissionIds),
     ]);
 
-    return this.db.transaction(async (tx) => {
+    const createdRole = await this.db.transaction(async (tx) => {
       const [role] = await tx.insert(schema.roles).values({ name }).returning({
         id: schema.roles.id,
       });
@@ -46,6 +49,18 @@ export class RolesService extends PaginationService {
 
       return await this.getRoleWithPermissions(role.id, tx);
     });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'role_created',
+        auditableType: 'Role',
+        auditableId: createdRole.id,
+        description: `Rol ${createdRole.name} creado`,
+      },
+      auditContext,
+    );
+
+    return createdRole;
   }
 
   async findAll(paginationDto: PaginationDto) {
@@ -103,12 +118,15 @@ export class RolesService extends PaginationService {
     return await this.validatedRoleId(id);
   }
 
-  async update(id: string, updateRoleDto: UpdateRoleDto) {
+  async update(
+    id: string,
+    updateRoleDto: UpdateRoleDto,
+    auditContext?: AuditContext,
+  ) {
     const { name, permissionIds } = updateRoleDto;
+    const currentRole = await this.validatedRoleId(id);
 
-    const validations: Promise<void>[] = [
-      this.validatedRoleId(id).then(() => undefined),
-    ];
+    const validations: Promise<void>[] = [];
 
     if (name) {
       validations.push(this.validatedRoleName(name, id));
@@ -122,7 +140,7 @@ export class RolesService extends PaginationService {
 
     await Promise.all(validations);
 
-    return this.db.transaction(async (tx) => {
+    const updatedRole = await this.db.transaction(async (tx) => {
       if (name) {
         await tx
           .update(schema.roles)
@@ -147,12 +165,52 @@ export class RolesService extends PaginationService {
 
       return await this.getRoleWithPermissions(id, tx);
     });
+
+    const oldPermissionIds = currentRole.permissions
+      .map((permission) => permission.id)
+      .sort();
+    const newPermissionIds = updatedRole.permissions
+      .map((permission) => permission.id)
+      .sort();
+    const permissionChanged =
+      JSON.stringify(oldPermissionIds) !== JSON.stringify(newPermissionIds);
+
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+
+    if (currentRole.name !== updatedRole.name) {
+      oldValues.name = currentRole.name;
+      newValues.name = updatedRole.name;
+    }
+
+    if (permissionChanged) {
+      oldValues.permissionIds = oldPermissionIds;
+      newValues.permissionIds = newPermissionIds;
+    }
+
+    if (Object.keys(oldValues).length === 0 && Object.keys(newValues).length === 0) {
+      return updatedRole;
+    }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'role_updated',
+        auditableType: 'Role',
+        auditableId: updatedRole.id,
+        oldValues: Object.keys(oldValues).length > 0 ? oldValues : null,
+        newValues: Object.keys(newValues).length > 0 ? newValues : null,
+        description: `Rol ${updatedRole.name} actualizado`,
+      },
+      auditContext,
+    );
+
+    return updatedRole;
   }
 
-  async remove(id: string) {
-    await this.validatedRoleId(id);
+  async remove(id: string, auditContext?: AuditContext) {
+    const currentRole = await this.validatedRoleId(id);
 
-    return this.db.transaction(async (tx) => {
+    const removedRole = await this.db.transaction(async (tx) => {
       await tx
         .delete(schema.rolePermissions)
         .where(eq(schema.rolePermissions.roleId, id));
@@ -168,6 +226,22 @@ export class RolesService extends PaginationService {
 
       return role;
     });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'role_deleted',
+        auditableType: 'Role',
+        auditableId: id,
+        oldValues: {
+          name: currentRole.name,
+          permissionIds: currentRole.permissions.map((permission) => permission.id),
+        },
+        description: `Rol ${currentRole.name} eliminado`,
+      },
+      auditContext,
+    );
+
+    return removedRole;
   }
 
   async validatedRoleId(id: string) {

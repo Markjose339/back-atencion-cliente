@@ -12,17 +12,23 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { schema } from '@/database/schema';
 import { and, count, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class PermissionsService extends PaginationService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
 
-  async create(createPermissionDto: CreatePermissionDto) {
+  async create(
+    createPermissionDto: CreatePermissionDto,
+    auditContext?: AuditContext,
+  ) {
     await this.validatedPermissionName(createPermissionDto.name);
 
     const [permission] = await this.db
@@ -33,6 +39,16 @@ export class PermissionsService extends PaginationService {
         name: schema.permissions.name,
         createdAt: schema.permissions.createdAt,
       });
+    await this.auditService.registerAuditLog(
+      {
+        action: 'permission_created',
+        auditableType: 'Permission',
+        auditableId: permission.id,
+        description: `Permiso ${permission.name} creado`,
+      },
+      auditContext,
+    );
+
     return permission;
   }
 
@@ -72,10 +88,13 @@ export class PermissionsService extends PaginationService {
     return await this.validatedPermissionId(id);
   }
 
-  async update(id: string, updatePermissionDto: UpdatePermissionDto) {
-    const validations: Promise<void>[] = [
-      this.validatedPermissionId(id).then(() => undefined),
-    ];
+  async update(
+    id: string,
+    updatePermissionDto: UpdatePermissionDto,
+    auditContext?: AuditContext,
+  ) {
+    const currentPermission = await this.validatedPermissionId(id);
+    const validations: Promise<void>[] = [];
 
     if (updatePermissionDto.name) {
       validations.push(
@@ -95,11 +114,33 @@ export class PermissionsService extends PaginationService {
         createdAt: schema.permissions.createdAt,
       });
 
+    if (currentPermission.name === permission.name) {
+      return permission;
+    }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'permission_updated',
+        auditableType: 'Permission',
+        auditableId: permission.id,
+        oldValues:
+          currentPermission.name !== permission.name
+            ? { name: currentPermission.name }
+            : null,
+        newValues:
+          currentPermission.name !== permission.name
+            ? { name: permission.name }
+            : null,
+        description: `Permiso ${permission.name} actualizado`,
+      },
+      auditContext,
+    );
+
     return permission;
   }
 
-  async remove(id: string) {
-    await this.validatedPermissionId(id);
+  async remove(id: string, auditContext?: AuditContext) {
+    const currentPermission = await this.validatedPermissionId(id);
 
     const [permission] = await this.db
       .delete(schema.permissions)
@@ -109,6 +150,17 @@ export class PermissionsService extends PaginationService {
         name: schema.permissions.name,
         createdAt: schema.permissions.createdAt,
       });
+    await this.auditService.registerAuditLog(
+      {
+        action: 'permission_deleted',
+        auditableType: 'Permission',
+        auditableId: permission.id,
+        oldValues: { name: currentPermission.name },
+        description: `Permiso ${currentPermission.name} eliminado`,
+      },
+      auditContext,
+    );
+
     return permission;
   }
 

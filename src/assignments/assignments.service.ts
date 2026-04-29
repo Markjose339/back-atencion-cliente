@@ -19,12 +19,15 @@ import { CreateOperatorAssignmentDto } from './dto/create-operator-assignment.dt
 import { UpdateOperatorAssignmentDto } from './dto/update-operator-assignment.dto';
 import { SyncWindowServicesDto } from './dto/sync-window-services.dto';
 import { SyncOperatorAssignmentsDto } from './dto/sync-operator-assignments.dto';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class AssignmentsService extends PaginationService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
@@ -130,7 +133,10 @@ export class AssignmentsService extends PaginationService {
     }
   }
 
-  async createWindowService(dto: CreateWindowServiceDto) {
+  async createWindowService(
+    dto: CreateWindowServiceDto,
+    auditContext?: AuditContext,
+  ) {
     const uniqueServiceIds = [
       ...new Set(dto.serviceIds.map((serviceId) => serviceId.trim())),
     ];
@@ -208,7 +214,7 @@ export class AssignmentsService extends PaginationService {
       .map((serviceId) => rowsByServiceId.get(serviceId))
       .filter((row): row is (typeof rows)[number] => row !== undefined);
 
-    return {
+    const response = {
       branchId: dto.branchId,
       windowId: dto.windowId,
       assigned,
@@ -219,6 +225,23 @@ export class AssignmentsService extends PaginationService {
         alreadyAssigned: alreadyAssigned.length,
       },
     };
+
+    if (assigned.length > 0) {
+      await this.auditService.registerAuditLog(
+        {
+          action: 'window_services_assigned',
+          auditableType: 'BranchWindow',
+          auditableId: branchWindowId,
+          newValues: {
+            serviceIds: assigned.map((row) => row.service.id),
+          },
+          description: `Servicios asignados a ventanilla en sucursal ${dto.branchId}`,
+        },
+        auditContext,
+      );
+    }
+
+    return response;
   }
 
   async listWindowServices(paginationDto: PaginationDto) {
@@ -323,28 +346,69 @@ export class AssignmentsService extends PaginationService {
     };
   }
 
-  async updateWindowService(id: string, dto: UpdateWindowServiceDto) {
-    await this.getWindowServiceById(id);
+  async updateWindowService(
+    id: string,
+    dto: UpdateWindowServiceDto,
+    auditContext?: AuditContext,
+  ) {
+    const current = await this.getWindowServiceById(id);
 
     await this.db
       .update(schema.branchWindowServices)
       .set({ isActive: dto.isActive })
       .where(eq(schema.branchWindowServices.id, id));
 
-    return this.getWindowServiceById(id);
+    const updated = await this.getWindowServiceById(id);
+
+    if (current.isActive === updated.isActive) {
+      return updated;
+    }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'window_service_updated',
+        auditableType: 'BranchWindowService',
+        auditableId: id,
+        oldValues: { isActive: current.isActive },
+        newValues: { isActive: updated.isActive },
+        description: `Asignacion ventanilla-servicio ${id} actualizada`,
+      },
+      auditContext,
+    );
+
+    return updated;
   }
 
-  async deleteWindowService(id: string) {
+  async deleteWindowService(id: string, auditContext?: AuditContext) {
     const row = await this.getWindowServiceById(id);
 
     await this.db
       .delete(schema.branchWindowServices)
       .where(eq(schema.branchWindowServices.id, id));
 
+    await this.auditService.registerAuditLog(
+      {
+        action: 'window_service_deleted',
+        auditableType: 'BranchWindowService',
+        auditableId: id,
+        oldValues: {
+          isActive: row.isActive,
+          serviceId: row.service.id,
+          windowId: row.window.id,
+          branchId: row.branch.id,
+        },
+        description: `Asignacion ventanilla-servicio ${id} eliminada`,
+      },
+      auditContext,
+    );
+
     return row;
   }
 
-  async createOperatorAssignment(dto: CreateOperatorAssignmentDto) {
+  async createOperatorAssignment(
+    dto: CreateOperatorAssignmentDto,
+    auditContext?: AuditContext,
+  ) {
     await Promise.all([
       this.validateBranchId(dto.branchId),
       this.validateWindowId(dto.windowId),
@@ -379,7 +443,25 @@ export class AssignmentsService extends PaginationService {
       })
       .returning({ id: schema.userBranchWindows.id });
 
-    return this.getOperatorAssignmentById(row.id);
+    const created = await this.getOperatorAssignmentById(row.id);
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'operator_assigned_to_window',
+        auditableType: 'UserBranchWindow',
+        auditableId: row.id,
+        newValues: {
+          userId: created.user.id,
+          windowId: created.window.id,
+          branchId: created.branch.id,
+          isActive: created.isActive,
+        },
+        description: `Usuario ${created.user.id} asignado a ventanilla ${created.window.id}`,
+      },
+      auditContext,
+    );
+
+    return created;
   }
 
   async listBranchWindows(branchId: string) {
@@ -545,7 +627,10 @@ export class AssignmentsService extends PaginationService {
     };
   }
 
-  async syncWindowServices(dto: SyncWindowServicesDto) {
+  async syncWindowServices(
+    dto: SyncWindowServicesDto,
+    auditContext?: AuditContext,
+  ) {
     await this.validateBranchId(dto.branchId);
 
     const desiredByWindowId = new Map<string, Set<string>>();
@@ -680,7 +765,7 @@ export class AssignmentsService extends PaginationService {
       }
     });
 
-    return {
+    const response = {
       branchId: dto.branchId,
       summary: {
         requested: desiredPairs.size,
@@ -690,9 +775,31 @@ export class AssignmentsService extends PaginationService {
         unchanged: desiredPairs.size - toInsert.length - toActivateIds.length,
       },
     };
+
+    if (
+      response.summary.created > 0 ||
+      response.summary.activated > 0 ||
+      response.summary.deleted > 0
+    ) {
+      await this.auditService.registerAuditLog(
+        {
+          action: 'window_services_synced',
+          auditableType: 'Branch',
+          auditableId: dto.branchId,
+          newValues: response.summary,
+          description: `Configuracion de servicios por ventanilla sincronizada para sucursal ${dto.branchId}`,
+        },
+        auditContext,
+      );
+    }
+
+    return response;
   }
 
-  async syncOperatorAssignments(dto: SyncOperatorAssignmentsDto) {
+  async syncOperatorAssignments(
+    dto: SyncOperatorAssignmentsDto,
+    auditContext?: AuditContext,
+  ) {
     await this.validateBranchId(dto.branchId);
 
     const desiredByUserId = new Map<
@@ -824,7 +931,7 @@ export class AssignmentsService extends PaginationService {
       }
     });
 
-    return {
+    const response = {
       branchId: dto.branchId,
       summary: {
         requested: desiredByUserId.size,
@@ -834,6 +941,25 @@ export class AssignmentsService extends PaginationService {
         unchanged: desiredByUserId.size - toCreate.length - toUpdate.length,
       },
     };
+
+    if (
+      response.summary.created > 0 ||
+      response.summary.updated > 0 ||
+      response.summary.deleted > 0
+    ) {
+      await this.auditService.registerAuditLog(
+        {
+          action: 'operator_assignments_synced',
+          auditableType: 'Branch',
+          auditableId: dto.branchId,
+          newValues: response.summary,
+          description: `Asignaciones de operadores sincronizadas para sucursal ${dto.branchId}`,
+        },
+        auditContext,
+      );
+    }
+
+    return response;
   }
 
   async listOperatorAssignments(paginationDto: PaginationDto) {
@@ -920,23 +1046,61 @@ export class AssignmentsService extends PaginationService {
     };
   }
 
-  async updateOperatorAssignment(id: string, dto: UpdateOperatorAssignmentDto) {
-    await this.getOperatorAssignmentById(id);
+  async updateOperatorAssignment(
+    id: string,
+    dto: UpdateOperatorAssignmentDto,
+    auditContext?: AuditContext,
+  ) {
+    const current = await this.getOperatorAssignmentById(id);
 
     await this.db
       .update(schema.userBranchWindows)
       .set({ isActive: dto.isActive })
       .where(eq(schema.userBranchWindows.id, id));
 
-    return this.getOperatorAssignmentById(id);
+    const updated = await this.getOperatorAssignmentById(id);
+
+    if (current.isActive === updated.isActive) {
+      return updated;
+    }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'operator_assignment_updated',
+        auditableType: 'UserBranchWindow',
+        auditableId: id,
+        oldValues: { isActive: current.isActive },
+        newValues: { isActive: updated.isActive },
+        description: `Asignacion de operador ${id} actualizada`,
+      },
+      auditContext,
+    );
+
+    return updated;
   }
 
-  async deleteOperatorAssignment(id: string) {
+  async deleteOperatorAssignment(id: string, auditContext?: AuditContext) {
     const row = await this.getOperatorAssignmentById(id);
 
     await this.db
       .delete(schema.userBranchWindows)
       .where(eq(schema.userBranchWindows.id, id));
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'operator_assignment_deleted',
+        auditableType: 'UserBranchWindow',
+        auditableId: id,
+        oldValues: {
+          userId: row.user.id,
+          windowId: row.window.id,
+          branchId: row.branch.id,
+          isActive: row.isActive,
+        },
+        description: `Asignacion de operador ${id} eliminada`,
+      },
+      auditContext,
+    );
 
     return row;
   }

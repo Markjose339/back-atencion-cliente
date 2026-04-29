@@ -12,17 +12,23 @@ import { schema } from '@/database/schema';
 import { PaginationService } from '@/pagination/pagination.service';
 import { PaginationDto } from '@/pagination/dto/pagination.dto';
 import { and, count, eq, ilike, ne, or, sql } from 'drizzle-orm';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class ServicesService extends PaginationService {
   constructor(
     @Inject(DB_CONN)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly auditService: AuditService,
   ) {
     super();
   }
 
-  async create(createServiceDto: CreateServiceDto) {
+  async create(
+    createServiceDto: CreateServiceDto,
+    auditContext?: AuditContext,
+  ) {
     await Promise.all([
       this.validateServiceName(createServiceDto.name),
       this.validateServiceCode(createServiceDto.code),
@@ -37,6 +43,16 @@ export class ServicesService extends PaginationService {
         code: schema.services.code,
         createdAt: schema.services.createdAt,
       });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'service_created',
+        auditableType: 'Service',
+        auditableId: service.id,
+        description: `Servicio ${service.code} creado`,
+      },
+      auditContext,
+    );
 
     return service;
   }
@@ -80,10 +96,13 @@ export class ServicesService extends PaginationService {
     return this.validateServiceId(id);
   }
 
-  async update(id: string, updateServiceDto: UpdateServiceDto) {
-    const validations: Promise<void>[] = [
-      this.validateServiceId(id).then(() => undefined),
-    ];
+  async update(
+    id: string,
+    updateServiceDto: UpdateServiceDto,
+    auditContext?: AuditContext,
+  ) {
+    const currentService = await this.validateServiceId(id);
+    const validations: Promise<void>[] = [];
 
     if (updateServiceDto.name) {
       validations.push(this.validateServiceName(updateServiceDto.name, id));
@@ -102,15 +121,56 @@ export class ServicesService extends PaginationService {
       .returning({
         id: schema.services.id,
         name: schema.services.name,
+        abbreviation: schema.services.abbreviation,
         code: schema.services.code,
+        isActive: schema.services.isActive,
         createdAt: schema.services.createdAt,
       });
+
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+
+    if (currentService.name !== service.name) {
+      oldValues.name = currentService.name;
+      newValues.name = service.name;
+    }
+
+    if (currentService.code !== service.code) {
+      oldValues.code = currentService.code;
+      newValues.code = service.code;
+    }
+
+    if (currentService.abbreviation !== service.abbreviation) {
+      oldValues.abbreviation = currentService.abbreviation;
+      newValues.abbreviation = service.abbreviation;
+    }
+
+    if (currentService.isActive !== service.isActive) {
+      oldValues.isActive = currentService.isActive;
+      newValues.isActive = service.isActive;
+    }
+
+    if (Object.keys(oldValues).length === 0 && Object.keys(newValues).length === 0) {
+      return service;
+    }
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'service_updated',
+        auditableType: 'Service',
+        auditableId: service.id,
+        oldValues: Object.keys(oldValues).length > 0 ? oldValues : null,
+        newValues: Object.keys(newValues).length > 0 ? newValues : null,
+        description: `Servicio ${service.code} actualizado`,
+      },
+      auditContext,
+    );
 
     return service;
   }
 
-  async remove(id: string) {
-    await this.validateServiceId(id);
+  async remove(id: string, auditContext?: AuditContext) {
+    const currentService = await this.validateServiceId(id);
 
     const [service] = await this.db
       .delete(schema.services)
@@ -121,6 +181,22 @@ export class ServicesService extends PaginationService {
         code: schema.services.code,
         createdAt: schema.services.createdAt,
       });
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'service_deleted',
+        auditableType: 'Service',
+        auditableId: service.id,
+        oldValues: {
+          name: currentService.name,
+          code: currentService.code,
+          abbreviation: currentService.abbreviation,
+          isActive: currentService.isActive,
+        },
+        description: `Servicio ${currentService.code} eliminado`,
+      },
+      auditContext,
+    );
 
     return service;
   }

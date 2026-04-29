@@ -21,10 +21,12 @@ import { AdvertisementsModule } from './advertisements/advertisements.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { QzModule } from './qz/qz.module';
 import { TicketRatingsModule } from './ticket-ratings/ticket-ratings.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    AuditModule,
     AuthModule,
     DatabaseModule,
     UsersModule,

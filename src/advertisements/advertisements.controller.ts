@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseFilters,
   UseInterceptors,
@@ -28,6 +29,9 @@ import { FindAdvertisementsQueryDto } from './dto/find-advertisements-query.dto'
 import { UpdateAdvertisementDto } from './dto/update-advertisement.dto';
 import { AdvertisementUploadExceptionFilter } from './filters/advertisement-upload-exception.filter';
 import { AdvertisementsService } from './advertisements.service';
+import type { Request } from 'express';
+import type { User } from '@/users/interfaces/user.interface';
+import { buildAuditContext } from '@/audit/utils/build-audit-context';
 
 const ADVERTISEMENT_UPLOAD_DIR = join(
   process.cwd(),
@@ -67,9 +71,14 @@ const fileInterceptor = FileInterceptor(ADVERTISEMENT_UPLOAD_FIELD, {
 export class AdvertisementsController {
   constructor(private readonly advertisementsService: AdvertisementsService) {}
 
+  private getAuditContext(req: Request) {
+    const userId = (req as Request & { user?: User }).user?.id;
+    return buildAuditContext(req, userId);
+  }
+
   @Post()
-  create(@Body() dto: CreateAdvertisementDto) {
-    return this.advertisementsService.create(dto);
+  create(@Body() dto: CreateAdvertisementDto, @Req() req: Request) {
+    return this.advertisementsService.create(dto, undefined, this.getAuditContext(req));
   }
 
   @Post('upload')
@@ -77,9 +86,10 @@ export class AdvertisementsController {
   @UseInterceptors(fileInterceptor)
   createWithFile(
     @Body() dto: CreateAdvertisementDto,
+    @Req() req: Request,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.advertisementsService.create(dto, file);
+    return this.advertisementsService.create(dto, file, this.getAuditContext(req));
   }
 
   @Get()
@@ -104,12 +114,16 @@ export class AdvertisementsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateAdvertisementDto) {
-    return this.advertisementsService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAdvertisementDto,
+    @Req() req: Request,
+  ) {
+    return this.advertisementsService.update(id, dto, this.getAuditContext(req));
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.advertisementsService.remove(id);
+  remove(@Param('id') id: string, @Req() req: Request) {
+    return this.advertisementsService.remove(id, this.getAuditContext(req));
   }
 }

@@ -17,6 +17,7 @@ import { CallNextDto } from './dto/call-next.dto';
 import type { CustomerServiceQueueResponse } from './dto/operator-queue-response.dto';
 import { AdminTicketTimelineQueryDto } from './dto/admin-ticket-timeline-query.dto';
 import type { TicketAttentionTimelineListResponse } from './dto/ticket-attention-timeline-response.dto';
+import { buildAuditContext } from '@/audit/utils/build-audit-context';
 
 type UserRequest = Request & { user: User };
 
@@ -54,17 +55,26 @@ export class CustomerServiceController {
       dto.branchId,
       dto.serviceId,
       req.user.id,
+      buildAuditContext(req, req.user.id),
     );
   }
 
   @Patch(':ticketId/recall')
   recall(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
-    return this.customerServiceService.recallTicket(ticketId, req.user.id);
+    return this.customerServiceService.recallTicket(
+      ticketId,
+      req.user.id,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Patch(':ticketId/hold')
   hold(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
-    return this.customerServiceService.holdTicket(ticketId, req.user.id);
+    return this.customerServiceService.holdTicket(
+      ticketId,
+      req.user.id,
+      buildAuditContext(req, req.user.id),
+    );
   }
 
   @Patch(':ticketId/start')
@@ -72,6 +82,7 @@ export class CustomerServiceController {
     return this.customerServiceService.startTicketAttention(
       ticketId,
       req.user.id,
+      buildAuditContext(req, req.user.id),
     );
   }
 
@@ -80,11 +91,16 @@ export class CustomerServiceController {
     return this.customerServiceService.finishTicketAttention(
       ticketId,
       req.user.id,
+      buildAuditContext(req, req.user.id),
     );
   }
 
   @Patch(':ticketId/cancel')
   cancel(@Param('ticketId') ticketId: string, @Req() req: UserRequest) {
-    return this.customerServiceService.cancelTicket(ticketId, req.user.id);
+    return this.customerServiceService.cancelTicket(
+      ticketId,
+      req.user.id,
+      buildAuditContext(req, req.user.id),
+    );
   }
 }

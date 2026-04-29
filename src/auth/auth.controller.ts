@@ -17,6 +17,8 @@ import { AUTH_CONSTANTS } from './constants/auth.constant';
 import { ConfigService } from '@nestjs/config';
 import { AuthResult } from './interfaces/auth.interface';
 import { User } from '@/users/interfaces/user.interface';
+import { AuditService } from '@/audit/audit.service';
+import { buildAuditContext } from '@/audit/utils/build-audit-context';
 
 type AuthRequest = Request & { user: AuthResult };
 type UserRequest = Request & { user: User };
@@ -26,16 +28,30 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly auditService: AuditService,
   ) {}
 
   @Post('login')
   @Public()
   @UseGuards(AuthGuard('local'))
   @HttpCode(HttpStatus.OK)
-  login(@Req() req: AuthRequest, @Res({ passthrough: true }) res: Response) {
+  async login(
+    @Req() req: AuthRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const authResult = req.user;
 
     this.setAuthCookies(res, authResult);
+
+    await this.auditService.registerAuditLog(
+      {
+        action: 'login_success',
+        auditableType: 'User',
+        auditableId: authResult.user.id,
+        description: `Login exitoso de ${authResult.user.email}`,
+      },
+      buildAuditContext(req, authResult.user.id),
+    );
 
     return {
       user: authResult.user,

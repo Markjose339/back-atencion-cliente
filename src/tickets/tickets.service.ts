@@ -8,6 +8,8 @@ import { WebsocketGateway } from '@/websocket/websocket.gateway';
 import { HttpService } from '@nestjs/axios';
 import { catchError, firstValueFrom, of } from 'rxjs';
 import { ExternalPackageResponse } from './interfaces/external-package-response.interface';
+import { AuditService } from '@/audit/audit.service';
+import type { AuditContext } from '@/audit/interfaces/audit-log.interface';
 
 @Injectable()
 export class TicketsService {
@@ -21,9 +23,10 @@ export class TicketsService {
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly websocketGateway: WebsocketGateway,
     private readonly httpService: HttpService,
+    private readonly auditService: AuditService,
   ) {}
 
-  async create(dto: CreateTicketDto) {
+  async create(dto: CreateTicketDto, auditContext?: AuditContext) {
     const todayRange = this.getTodayRange();
     const lockKey = this.getLockKey(dto.type, dto.branchId);
 
@@ -110,10 +113,22 @@ export class TicketsService {
         serviceId: dto.serviceId,
       });
 
-      return {
+      const response = {
         ...ticket,
         branchName: branch.name,
       };
+
+      await this.auditService.registerAuditLog(
+        {
+          action: 'ticket_created',
+          auditableType: 'Ticket',
+          auditableId: ticket.id,
+          description: `Ticket ${ticket.code} creado`,
+        },
+        auditContext,
+      );
+
+      return response;
     });
   }
 
