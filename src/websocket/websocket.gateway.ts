@@ -81,7 +81,7 @@ type RateTicketStatePayload = {
   branchName: string;
   serviceId: string;
   serviceName: string;
-  serviceCode: string;
+  serviceCode: boolean;
   windowId: string;
   windowName: string;
   calledAt: Date | null;
@@ -139,7 +139,7 @@ export class WebsocketGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   constructor(
     @Inject(DB_CONN)
@@ -572,8 +572,14 @@ export class WebsocketGateway
     const [scope] = await this.db
       .select({ id: schema.branchWindows.id })
       .from(schema.branchWindows)
-      .innerJoin(schema.branches, eq(schema.branchWindows.branchId, schema.branches.id))
-      .innerJoin(schema.windows, eq(schema.branchWindows.windowId, schema.windows.id))
+      .innerJoin(
+        schema.branches,
+        eq(schema.branchWindows.branchId, schema.branches.id),
+      )
+      .innerJoin(
+        schema.windows,
+        eq(schema.branchWindows.windowId, schema.windows.id),
+      )
       .where(
         and(
           eq(schema.branchWindows.branchId, branchId),
@@ -670,18 +676,33 @@ export class WebsocketGateway
         ratingRatedAt: schema.ticketRatings.ratedAt,
       })
       .from(schema.tickets)
-      .innerJoin(schema.branches, eq(schema.tickets.branchId, schema.branches.id))
-      .innerJoin(schema.services, eq(schema.tickets.serviceId, schema.services.id))
+      .innerJoin(
+        schema.branches,
+        eq(schema.tickets.branchId, schema.branches.id),
+      )
+      .innerJoin(
+        schema.services,
+        eq(schema.tickets.serviceId, schema.services.id),
+      )
       .innerJoin(
         schema.branchWindowServices,
-        eq(schema.tickets.branchWindowServiceId, schema.branchWindowServices.id),
+        eq(
+          schema.tickets.branchWindowServiceId,
+          schema.branchWindowServices.id,
+        ),
       )
       .innerJoin(
         schema.branchWindows,
         eq(schema.branchWindowServices.branchWindowId, schema.branchWindows.id),
       )
-      .innerJoin(schema.windows, eq(schema.branchWindows.windowId, schema.windows.id))
-      .leftJoin(schema.ticketRatings, eq(schema.ticketRatings.ticketId, schema.tickets.id))
+      .innerJoin(
+        schema.windows,
+        eq(schema.branchWindows.windowId, schema.windows.id),
+      )
+      .leftJoin(
+        schema.ticketRatings,
+        eq(schema.ticketRatings.ticketId, schema.tickets.id),
+      )
       .where(
         and(
           eq(schema.tickets.branchId, branchId),

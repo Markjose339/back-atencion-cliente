@@ -19,7 +19,7 @@ export const services = pgTable(
 
     name: varchar('name', { length: 50 }).unique().notNull(),
     abbreviation: varchar('abbreviation', { length: 10 }).notNull(),
-    code: varchar('code', { length: 5 }).unique().notNull(),
+    code: boolean('code').default(true).notNull(),
     isActive: boolean('is_active').default(true).notNull(),
 
     createdAt: timestamp('created_at', { withTimezone: true })

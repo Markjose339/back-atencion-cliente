@@ -75,7 +75,7 @@ type ServicePerformanceRow = {
   branchName: string;
   serviceId: string;
   serviceName: string;
-  serviceCode: string;
+  serviceCode: boolean;
   ticketsAttended: number;
   averageWaitMinutes: number;
   averageAttentionMinutes: number;
@@ -98,7 +98,7 @@ type AreaBranchAccumulator = {
 type ServiceItemAccumulator = {
   serviceId: string;
   serviceName: string;
-  serviceCode: string;
+  serviceCode: boolean;
   ticketsAttended: number;
   attendanceSharePct: number;
   averageWaitMinutes: number;

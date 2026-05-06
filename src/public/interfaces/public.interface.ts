@@ -15,7 +15,7 @@ export type DisplayTicketRow = {
   branchName: string;
   serviceId: string;
   serviceName: string;
-  serviceCode: string;
+  serviceCode: boolean;
   windowId: string | null;
   windowName: string | null;
   calledAt: Date | null;
@@ -31,7 +31,7 @@ export type PublicDisplayTicket = {
   branchName: string;
   serviceId: string;
   serviceName: string;
-  serviceCode: string;
+  serviceCode: boolean;
   windowId: string;
   windowName: string;
   calledAt: Date | null;

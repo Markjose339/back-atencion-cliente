@@ -85,7 +85,7 @@ export type DashboardWindowPerformanceResponse = {
 export type DashboardServicePerformanceItem = {
   serviceId: string;
   serviceName: string;
-  serviceCode: string;
+  serviceCode: boolean;
   ticketsAttended: number;
   attendanceSharePct: number;
   averageWaitMinutes: number;

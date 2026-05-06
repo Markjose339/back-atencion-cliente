@@ -29,10 +29,7 @@ export class ServicesService extends PaginationService {
     createServiceDto: CreateServiceDto,
     auditContext?: AuditContext,
   ) {
-    await Promise.all([
-      this.validateServiceName(createServiceDto.name),
-      this.validateServiceCode(createServiceDto.code),
-    ]);
+    await this.validateServiceName(createServiceDto.name);
 
     const [service] = await this.db
       .insert(schema.services)
@@ -40,7 +37,9 @@ export class ServicesService extends PaginationService {
       .returning({
         id: schema.services.id,
         name: schema.services.name,
+        abbreviation: schema.services.abbreviation,
         code: schema.services.code,
+        isActive: schema.services.isActive,
         createdAt: schema.services.createdAt,
       });
 
@@ -49,7 +48,7 @@ export class ServicesService extends PaginationService {
         action: 'service_created',
         auditableType: 'Service',
         auditableId: service.id,
-        description: `Servicio ${service.code} creado`,
+        description: `Servicio ${service.name} creado`,
       },
       auditContext,
     );
@@ -66,7 +65,7 @@ export class ServicesService extends PaginationService {
       ? or(
           ilike(schema.services.id, `%${search}%`),
           ilike(schema.services.name, `%${search}%`),
-          ilike(schema.services.code, `%${search}%`),
+          ilike(schema.services.abbreviation, `%${search}%`),
         )
       : undefined;
 
@@ -80,6 +79,7 @@ export class ServicesService extends PaginationService {
           name: true,
           abbreviation: true,
           code: true,
+          isActive: true,
           createdAt: true,
         },
         orderBy: (services, { desc }) => desc(services.createdAt),
@@ -102,21 +102,17 @@ export class ServicesService extends PaginationService {
     auditContext?: AuditContext,
   ) {
     const currentService = await this.validateServiceId(id);
-    const validations: Promise<void>[] = [];
 
     if (updateServiceDto.name) {
-      validations.push(this.validateServiceName(updateServiceDto.name, id));
+      await this.validateServiceName(updateServiceDto.name, id);
     }
-
-    if (updateServiceDto.code) {
-      validations.push(this.validateServiceCode(updateServiceDto.code, id));
-    }
-
-    await Promise.all(validations);
 
     const [service] = await this.db
       .update(schema.services)
-      .set({ ...updateServiceDto, updatedAt: sql`now()` })
+      .set({
+        ...updateServiceDto,
+        updatedAt: sql`now()`,
+      })
       .where(eq(schema.services.id, id))
       .returning({
         id: schema.services.id,
@@ -125,6 +121,7 @@ export class ServicesService extends PaginationService {
         code: schema.services.code,
         isActive: schema.services.isActive,
         createdAt: schema.services.createdAt,
+        updatedAt: schema.services.updatedAt,
       });
 
     const oldValues: Record<string, unknown> = {};
@@ -135,14 +132,14 @@ export class ServicesService extends PaginationService {
       newValues.name = service.name;
     }
 
-    if (currentService.code !== service.code) {
-      oldValues.code = currentService.code;
-      newValues.code = service.code;
-    }
-
     if (currentService.abbreviation !== service.abbreviation) {
       oldValues.abbreviation = currentService.abbreviation;
       newValues.abbreviation = service.abbreviation;
+    }
+
+    if (currentService.code !== service.code) {
+      oldValues.code = currentService.code;
+      newValues.code = service.code;
     }
 
     if (currentService.isActive !== service.isActive) {
@@ -150,7 +147,10 @@ export class ServicesService extends PaginationService {
       newValues.isActive = service.isActive;
     }
 
-    if (Object.keys(oldValues).length === 0 && Object.keys(newValues).length === 0) {
+    const hasChanges =
+      Object.keys(oldValues).length > 0 || Object.keys(newValues).length > 0;
+
+    if (!hasChanges) {
       return service;
     }
 
@@ -159,9 +159,9 @@ export class ServicesService extends PaginationService {
         action: 'service_updated',
         auditableType: 'Service',
         auditableId: service.id,
-        oldValues: Object.keys(oldValues).length > 0 ? oldValues : null,
-        newValues: Object.keys(newValues).length > 0 ? newValues : null,
-        description: `Servicio ${service.code} actualizado`,
+        oldValues,
+        newValues,
+        description: `Servicio ${service.name} actualizado`,
       },
       auditContext,
     );
@@ -178,7 +178,9 @@ export class ServicesService extends PaginationService {
       .returning({
         id: schema.services.id,
         name: schema.services.name,
+        abbreviation: schema.services.abbreviation,
         code: schema.services.code,
+        isActive: schema.services.isActive,
         createdAt: schema.services.createdAt,
       });
 
@@ -189,11 +191,11 @@ export class ServicesService extends PaginationService {
         auditableId: service.id,
         oldValues: {
           name: currentService.name,
-          code: currentService.code,
           abbreviation: currentService.abbreviation,
+          code: currentService.code,
           isActive: currentService.isActive,
         },
-        description: `Servicio ${currentService.code} eliminado`,
+        description: `Servicio ${currentService.name} eliminado`,
       },
       auditContext,
     );
@@ -206,8 +208,9 @@ export class ServicesService extends PaginationService {
       where: eq(schema.services.id, id),
     });
 
-    if (!service)
+    if (!service) {
       throw new NotFoundException(`Servicio con el id ${id} no encontrado`);
+    }
 
     return service;
   }
@@ -219,18 +222,8 @@ export class ServicesService extends PaginationService {
 
     const service = await this.db.query.services.findFirst({ where });
 
-    if (service)
+    if (service) {
       throw new ConflictException(`Servicio con el nombre "${name}" ya existe`);
-  }
-
-  async validateServiceCode(code: string, excludeId?: string) {
-    const where = excludeId
-      ? and(eq(schema.services.code, code), ne(schema.services.id, excludeId))
-      : eq(schema.services.code, code);
-
-    const service = await this.db.query.services.findFirst({ where });
-
-    if (service)
-      throw new ConflictException(`Servicio con el código "${code}" ya existe`);
+    }
   }
 }
