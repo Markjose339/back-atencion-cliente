@@ -45,10 +45,40 @@ export class AssignmentsService extends PaginationService {
 
     const [created] = await this.db
       .insert(schema.branchWindows)
-      .values({ branchId, windowId })
+      .values({ branchId, windowId, isActive: true })
       .returning({ id: schema.branchWindows.id });
 
     return created.id;
+  }
+
+  private async cleanupBranchWindows(branchId: string) {
+    const branchWindows = await this.db
+      .select({
+        id: schema.branchWindows.id,
+      })
+      .from(schema.branchWindows)
+      .where(eq(schema.branchWindows.branchId, branchId));
+
+    for (const branchWindow of branchWindows) {
+      const [servicesCount] = await this.db
+        .select({ value: count() })
+        .from(schema.branchWindowServices)
+        .where(eq(schema.branchWindowServices.branchWindowId, branchWindow.id));
+
+      const [operatorsCount] = await this.db
+        .select({ value: count() })
+        .from(schema.userBranchWindows)
+        .where(eq(schema.userBranchWindows.branchWindowId, branchWindow.id));
+
+      if (
+        Number(servicesCount.value) === 0 &&
+        Number(operatorsCount.value) === 0
+      ) {
+        await this.db
+          .delete(schema.branchWindows)
+          .where(eq(schema.branchWindows.id, branchWindow.id));
+      }
+    }
   }
 
   private async getBranchWindowId(branchId: string, windowId: string) {
@@ -385,6 +415,8 @@ export class AssignmentsService extends PaginationService {
     await this.db
       .delete(schema.branchWindowServices)
       .where(eq(schema.branchWindowServices.id, id));
+
+    await this.cleanupBranchWindows(row.branch.id);
 
     await this.auditService.registerAuditLog(
       {
@@ -765,6 +797,8 @@ export class AssignmentsService extends PaginationService {
       }
     });
 
+    await this.cleanupBranchWindows(dto.branchId);
+
     const response = {
       branchId: dto.branchId,
       summary: {
@@ -875,6 +909,7 @@ export class AssignmentsService extends PaginationService {
       if (!branchWindowId) continue;
 
       const existing = existingByUserId.get(row.userId);
+
       if (!existing) {
         toCreate.push({
           userId: row.userId,
@@ -930,6 +965,8 @@ export class AssignmentsService extends PaginationService {
           .where(inArray(schema.userBranchWindows.id, toDeleteIds));
       }
     });
+
+    await this.cleanupBranchWindows(dto.branchId);
 
     const response = {
       branchId: dto.branchId,
@@ -1085,6 +1122,8 @@ export class AssignmentsService extends PaginationService {
     await this.db
       .delete(schema.userBranchWindows)
       .where(eq(schema.userBranchWindows.id, id));
+
+    await this.cleanupBranchWindows(row.branch.id);
 
     await this.auditService.registerAuditLog(
       {
