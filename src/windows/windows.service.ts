@@ -38,6 +38,7 @@ export class WindowsService extends PaginationService {
         id: schema.windows.id,
         code: schema.windows.code,
         name: schema.windows.name,
+        isActive: schema.windows.isActive,
         createdAt: schema.windows.createdAt,
       });
 
@@ -76,6 +77,7 @@ export class WindowsService extends PaginationService {
           id: true,
           code: true,
           name: true,
+          isActive: true,
           createdAt: true,
         },
         orderBy: (windows, { desc }) => desc(windows.createdAt),
@@ -139,7 +141,10 @@ export class WindowsService extends PaginationService {
       newValues.isActive = window.isActive;
     }
 
-    if (Object.keys(oldValues).length === 0 && Object.keys(newValues).length === 0) {
+    if (
+      Object.keys(oldValues).length === 0 &&
+      Object.keys(newValues).length === 0
+    ) {
       return window;
     }
 

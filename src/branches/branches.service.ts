@@ -33,6 +33,7 @@ export class BranchesService extends PaginationService {
       .returning({
         id: schema.branches.id,
         name: schema.branches.name,
+        isActive: schema.branches.isActive,
         createdAt: schema.branches.createdAt,
       });
 
@@ -71,6 +72,7 @@ export class BranchesService extends PaginationService {
           name: true,
           address: true,
           departmentName: true,
+          isActive: true,
           createdAt: true,
         },
         orderBy: (branches, { desc }) => desc(branches.createdAt),
@@ -109,6 +111,7 @@ export class BranchesService extends PaginationService {
         id: schema.branches.id,
         name: schema.branches.name,
         address: schema.branches.address,
+        isActive: schema.branches.isActive,
         departmentName: schema.branches.departmentName,
         createdAt: schema.branches.createdAt,
       });
@@ -131,7 +134,10 @@ export class BranchesService extends PaginationService {
       newValues.departmentName = branch.departmentName;
     }
 
-    if (Object.keys(oldValues).length > 0 || Object.keys(newValues).length > 0) {
+    if (
+      Object.keys(oldValues).length > 0 ||
+      Object.keys(newValues).length > 0
+    ) {
       await this.auditService.registerAuditLog(
         {
           action: 'branch_updated',

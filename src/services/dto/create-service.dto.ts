@@ -22,4 +22,8 @@ export class CreateServiceDto {
     message: 'El campo debe ser un valor booleano (true o false).',
   })
   code!: boolean;
+
+  @IsBoolean({ message: 'El estado activo debe ser un valor booleano' })
+  @IsNotEmpty({ message: 'El estado activo es obligatorio' })
+  isActive!: boolean;
 }
