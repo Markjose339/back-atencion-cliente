@@ -2,6 +2,7 @@ import { branches } from '@/branches/entities/branch.entity';
 import { services } from '@/services/entities/service.entity';
 import { users } from '@/users/entities/user.entity';
 import { branchWindowServices } from '@/branches/entities/branch_window_service.entity';
+import { ticketSessions } from './ticket-session.entity';
 import { createId } from '@paralleldrive/cuid2';
 import { relations } from 'drizzle-orm';
 import {
@@ -10,6 +11,7 @@ import {
   timestamp,
   index,
   pgEnum,
+  integer,
 } from 'drizzle-orm/pg-core';
 
 export const TicketTypeEnum = pgEnum('ticket_type', [
@@ -33,6 +35,7 @@ export const tickets = pgTable(
       .primaryKey()
       .$defaultFn(() => createId()),
     code: varchar('code', { length: 15 }).notNull(),
+    sequenceNumber: integer('sequence_number'),
     packageCode: varchar('package_code', { length: 25 }),
     packageZone: varchar('package_zone', { length: 30 }),
 
@@ -46,6 +49,11 @@ export const tickets = pgTable(
     serviceId: varchar('service_id', { length: 24 })
       .references(() => services.id, { onDelete: 'restrict' })
       .notNull(),
+
+    ticketSessionId: varchar('ticket_session_id', { length: 24 }).references(
+      () => ticketSessions.id,
+      { onDelete: 'set null' },
+    ),
 
     branchWindowServiceId: varchar('branch_window_service_id', {
       length: 24,
@@ -73,6 +81,10 @@ export const tickets = pgTable(
   },
   (t) => [
     index('tickets_code_idx').on(t.code),
+    index('tickets_session_sequence_idx').on(
+      t.ticketSessionId,
+      t.sequenceNumber,
+    ),
     index('tickets_package_code_idx').on(t.packageCode),
 
     index('tickets_next_idx').on(
