@@ -13,10 +13,7 @@ import {
   count,
   desc,
   eq,
-  gte,
   ilike,
-  isNull,
-  lte,
   or,
   sql,
   type SQL,
@@ -65,7 +62,6 @@ export class AdvertisementsService extends PaginationService {
     file?: Express.Multer.File,
     auditContext?: AuditContext,
   ): Promise<AdvertisementResponse> {
-    this.validateSchedule(dto.startsAt ?? null, dto.endsAt ?? null);
     const playbackOrder = this.normalizePlaybackOrder(dto.playbackOrder);
     const videoVolume = this.normalizeVideoVolume(dto.videoVolume);
     const videoMuted = dto.videoMuted ?? false;
@@ -140,8 +136,6 @@ export class AdvertisementsService extends PaginationService {
           videoVolume,
           videoMuted,
           isActive: dto.isActive ?? true,
-          startsAt: dto.startsAt ?? null,
-          endsAt: dto.endsAt ?? null,
         })
         .returning();
 
@@ -216,11 +210,6 @@ export class AdvertisementsService extends PaginationService {
       );
     }
 
-    const startsAt =
-      dto.startsAt === undefined ? current.startsAt : dto.startsAt;
-    const endsAt = dto.endsAt === undefined ? current.endsAt : dto.endsAt;
-    this.validateSchedule(startsAt ?? null, endsAt ?? null);
-
     const normalizedTextContent =
       dto.textContent === undefined
         ? undefined
@@ -294,8 +283,6 @@ export class AdvertisementsService extends PaginationService {
       videoVolume,
       videoMuted,
       ...(dto.isActive !== undefined && { isActive: dto.isActive }),
-      ...(dto.startsAt !== undefined && { startsAt: dto.startsAt ?? null }),
-      ...(dto.endsAt !== undefined && { endsAt: dto.endsAt ?? null }),
       ...(file && {
         filePath: nextFilePath,
         mimeType: nextMimeType,
@@ -354,16 +341,6 @@ export class AdvertisementsService extends PaginationService {
       newValues.isActive = updated.isActive;
     }
 
-    if (current.startsAt?.getTime() !== updated.startsAt?.getTime()) {
-      oldValues.startsAt = current.startsAt;
-      newValues.startsAt = updated.startsAt;
-    }
-
-    if (current.endsAt?.getTime() !== updated.endsAt?.getTime()) {
-      oldValues.endsAt = current.endsAt;
-      newValues.endsAt = updated.endsAt;
-    }
-
     if (Object.keys(oldValues).length > 0 || Object.keys(newValues).length > 0) {
       await this.auditService.registerAuditLog(
         {
@@ -416,9 +393,8 @@ export class AdvertisementsService extends PaginationService {
   }
 
   async getActivePlaylist(displayMode?: AdvertisementDisplayMode) {
-    const now = new Date();
     const where = this.combineWhere([
-      this.buildActiveNowFilter(now),
+      eq(schema.advertisements.isActive, true),
       displayMode
         ? eq(schema.advertisements.displayMode, displayMode)
         : undefined,
@@ -432,7 +408,7 @@ export class AdvertisementsService extends PaginationService {
       ],
     });
 
-    return rows.map((row) => this.toResponse(row, now));
+    return rows.map((row) => this.toResponse(row));
   }
 
   getOptions() {
@@ -473,7 +449,6 @@ export class AdvertisementsService extends PaginationService {
       query.isActive !== undefined
         ? eq(schema.advertisements.isActive, query.isActive)
         : undefined,
-      query.activeNow ? this.buildActiveNowFilter(new Date()) : undefined,
     ]);
   }
 
@@ -482,26 +457,6 @@ export class AdvertisementsService extends PaginationService {
   ): SQL<unknown> | undefined {
     const valid = conditions.filter((c): c is SQL<unknown> => c !== undefined);
     return valid.length === 0 ? undefined : and(...valid);
-  }
-
-  private buildActiveNowFilter(now: Date): SQL<unknown> {
-    return and(
-      eq(schema.advertisements.isActive, true),
-      or(
-        isNull(schema.advertisements.startsAt),
-        lte(schema.advertisements.startsAt, now),
-      ),
-      or(
-        isNull(schema.advertisements.endsAt),
-        gte(schema.advertisements.endsAt, now),
-      ),
-    ) as SQL<unknown>;
-  }
-
-  private validateSchedule(startsAt: Date | null, endsAt: Date | null): void {
-    if (startsAt && endsAt && endsAt <= startsAt) {
-      throw new BadRequestException('endsAt debe ser mayor que startsAt');
-    }
   }
 
   private normalizeTextContent(value?: string | null): string | null {
@@ -616,10 +571,7 @@ export class AdvertisementsService extends PaginationService {
     );
   }
 
-  private toResponse(
-    row: AdvertisementRow,
-    now: Date = new Date(),
-  ): AdvertisementResponse {
+  private toResponse(row: AdvertisementRow): AdvertisementResponse {
     const normalizedPath =
       row.filePath?.replace(/\\/g, '/').replace(/^\/+/, '') ?? null;
 
@@ -636,18 +588,9 @@ export class AdvertisementsService extends PaginationService {
       videoVolume: row.videoVolume,
       videoMuted: row.videoMuted,
       isActive: row.isActive,
-      isVisibleNow: this.isVisibleNow(row, now),
-      startsAt: row.startsAt,
-      endsAt: row.endsAt,
+      isVisibleNow: row.isActive,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
-  }
-
-  private isVisibleNow(row: AdvertisementRow, now: Date): boolean {
-    if (!row.isActive) return false;
-    if (row.startsAt && row.startsAt > now) return false;
-    if (row.endsAt && row.endsAt < now) return false;
-    return true;
   }
 }

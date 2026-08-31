@@ -24,9 +24,4 @@ export class FindAdvertisementsQueryDto extends PaginationDto {
   @Transform(toOptionalBoolean)
   @IsBoolean({ message: 'isActive debe ser booleano' })
   isActive?: boolean;
-
-  @IsOptional()
-  @Transform(toOptionalBoolean)
-  @IsBoolean({ message: 'activeNow debe ser booleano' })
-  activeNow?: boolean;
 }

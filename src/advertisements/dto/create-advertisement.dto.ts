@@ -2,7 +2,6 @@ import { Transform } from 'class-transformer';
 import {
   IsInt,
   IsBoolean,
-  IsDate,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -22,7 +21,6 @@ import {
 } from '@/advertisements/constants/advertisement.constants';
 import {
   toOptionalBoolean,
-  toOptionalDateOrNull,
   toOptionalNumber,
 } from './transformers';
 
@@ -79,14 +77,4 @@ export class CreateAdvertisementDto {
   @Transform(toOptionalBoolean)
   @IsBoolean({ message: 'videoMuted debe ser booleano' })
   videoMuted?: boolean;
-
-  @IsOptional()
-  @Transform(toOptionalDateOrNull)
-  @IsDate({ message: 'startsAt debe ser una fecha valida' })
-  startsAt?: Date | null;
-
-  @IsOptional()
-  @Transform(toOptionalDateOrNull)
-  @IsDate({ message: 'endsAt debe ser una fecha valida' })
-  endsAt?: Date | null;
 }

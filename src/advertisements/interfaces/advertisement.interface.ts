@@ -23,10 +23,8 @@ export interface AdvertisementResponse {
   // Control
   isActive: boolean;
   isVisibleNow: boolean;
-  startsAt: Date | null;
-  endsAt: Date | null;
 
-  // Auditoría
+  // Auditoria
   createdAt: Date;
   updatedAt: Date;
 }
