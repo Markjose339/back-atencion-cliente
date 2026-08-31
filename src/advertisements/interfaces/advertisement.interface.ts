@@ -16,6 +16,9 @@ export interface AdvertisementResponse {
 
   // Texto (TICKER)
   textContent: string | null;
+  playbackOrder: number;
+  videoVolume: number;
+  videoMuted: boolean;
 
   // Control
   isActive: boolean;

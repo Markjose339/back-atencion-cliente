@@ -1,18 +1,30 @@
 import { Transform } from 'class-transformer';
 import {
+  IsInt,
   IsBoolean,
   IsDate,
   IsIn,
   IsNotEmpty,
   IsOptional,
+  Max,
   IsString,
+  Min,
   MaxLength,
 } from 'class-validator';
 import {
+  ADVERTISEMENT_DEFAULT_PLAYBACK_ORDER,
+  ADVERTISEMENT_DEFAULT_VIDEO_VOLUME,
   ADVERTISEMENT_DISPLAY_MODES,
+  ADVERTISEMENT_MAX_VIDEO_VOLUME,
+  ADVERTISEMENT_MIN_PLAYBACK_ORDER,
+  ADVERTISEMENT_MIN_VIDEO_VOLUME,
   ADVERTISEMENT_MEDIA_TYPES,
 } from '@/advertisements/constants/advertisement.constants';
-import { toOptionalBoolean, toOptionalDateOrNull } from './transformers';
+import {
+  toOptionalBoolean,
+  toOptionalDateOrNull,
+  toOptionalNumber,
+} from './transformers';
 
 export class CreateAdvertisementDto {
   @IsNotEmpty({ message: 'El titulo es obligatorio' })
@@ -43,6 +55,30 @@ export class CreateAdvertisementDto {
   @Transform(toOptionalBoolean)
   @IsBoolean({ message: 'isActive debe ser booleano' })
   isActive?: boolean;
+
+  @IsOptional()
+  @Transform(toOptionalNumber)
+  @IsInt({ message: 'playbackOrder debe ser un numero entero' })
+  @Min(ADVERTISEMENT_MIN_PLAYBACK_ORDER, {
+    message: `playbackOrder no puede ser menor que ${ADVERTISEMENT_MIN_PLAYBACK_ORDER}`,
+  })
+  playbackOrder?: number = ADVERTISEMENT_DEFAULT_PLAYBACK_ORDER;
+
+  @IsOptional()
+  @Transform(toOptionalNumber)
+  @IsInt({ message: 'videoVolume debe ser un numero entero' })
+  @Min(ADVERTISEMENT_MIN_VIDEO_VOLUME, {
+    message: `videoVolume no puede ser menor que ${ADVERTISEMENT_MIN_VIDEO_VOLUME}`,
+  })
+  @Max(ADVERTISEMENT_MAX_VIDEO_VOLUME, {
+    message: `videoVolume no puede ser mayor que ${ADVERTISEMENT_MAX_VIDEO_VOLUME}`,
+  })
+  videoVolume?: number = ADVERTISEMENT_DEFAULT_VIDEO_VOLUME;
+
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean({ message: 'videoMuted debe ser booleano' })
+  videoMuted?: boolean;
 
   @IsOptional()
   @Transform(toOptionalDateOrNull)

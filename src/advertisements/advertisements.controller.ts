@@ -114,12 +114,20 @@ export class AdvertisementsController {
   }
 
   @Patch(':id')
+  @UseFilters(AdvertisementUploadExceptionFilter)
+  @UseInterceptors(fileInterceptor)
   update(
     @Param('id') id: string,
     @Body() dto: UpdateAdvertisementDto,
     @Req() req: Request,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.advertisementsService.update(id, dto, this.getAuditContext(req));
+    return this.advertisementsService.update(
+      id,
+      dto,
+      this.getAuditContext(req),
+      file,
+    );
   }
 
   @Delete(':id')

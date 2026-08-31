@@ -7,6 +7,11 @@ export type AdvertisementDisplayMode =
 
 export const ADVERTISEMENT_DEFAULT_DISPLAY_MODE: AdvertisementDisplayMode =
   'FULLSCREEN';
+export const ADVERTISEMENT_DEFAULT_PLAYBACK_ORDER = 0;
+export const ADVERTISEMENT_DEFAULT_VIDEO_VOLUME = 50;
+export const ADVERTISEMENT_MIN_PLAYBACK_ORDER = 0;
+export const ADVERTISEMENT_MAX_VIDEO_VOLUME = 100;
+export const ADVERTISEMENT_MIN_VIDEO_VOLUME = 0;
 
 export const ADVERTISEMENT_UPLOAD_FIELD = 'file';
 export const ADVERTISEMENT_UPLOAD_SUBDIRECTORY = 'advertisements';

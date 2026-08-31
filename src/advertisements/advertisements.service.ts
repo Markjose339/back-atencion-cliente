@@ -8,6 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  asc,
   and,
   count,
   desc,
@@ -27,7 +28,12 @@ import {
   ADVERTISEMENT_ALLOWED_IMAGE_MIME_TYPES,
   ADVERTISEMENT_ALLOWED_VIDEO_MIME_TYPES,
   ADVERTISEMENT_DEFAULT_DISPLAY_MODE,
+  ADVERTISEMENT_DEFAULT_PLAYBACK_ORDER,
+  ADVERTISEMENT_DEFAULT_VIDEO_VOLUME,
   ADVERTISEMENT_DISPLAY_MODES,
+  ADVERTISEMENT_MAX_VIDEO_VOLUME,
+  ADVERTISEMENT_MIN_PLAYBACK_ORDER,
+  ADVERTISEMENT_MIN_VIDEO_VOLUME,
   ADVERTISEMENT_MEDIA_TYPES,
   ADVERTISEMENT_UPLOAD_SUBDIRECTORY,
   type AdvertisementDisplayMode,
@@ -60,6 +66,9 @@ export class AdvertisementsService extends PaginationService {
     auditContext?: AuditContext,
   ): Promise<AdvertisementResponse> {
     this.validateSchedule(dto.startsAt ?? null, dto.endsAt ?? null);
+    const playbackOrder = this.normalizePlaybackOrder(dto.playbackOrder);
+    const videoVolume = this.normalizeVideoVolume(dto.videoVolume);
+    const videoMuted = dto.videoMuted ?? false;
 
     const { mediaType } = dto;
     const normalizedTextContent = this.normalizeTextContent(dto.textContent);
@@ -127,6 +136,9 @@ export class AdvertisementsService extends PaginationService {
           fileSize,
           textContent: mediaType === 'TEXT' ? normalizedTextContent : null,
           displayMode: dto.displayMode ?? ADVERTISEMENT_DEFAULT_DISPLAY_MODE,
+          playbackOrder,
+          videoVolume,
+          videoMuted,
           isActive: dto.isActive ?? true,
           startsAt: dto.startsAt ?? null,
           endsAt: dto.endsAt ?? null,
@@ -141,6 +153,9 @@ export class AdvertisementsService extends PaginationService {
           newValues: {
             mediaType: advertisement.mediaType,
             displayMode: advertisement.displayMode,
+            playbackOrder: advertisement.playbackOrder,
+            videoVolume: advertisement.videoVolume,
+            videoMuted: advertisement.videoMuted,
             isActive: advertisement.isActive,
           },
           description: `Publicidad ${advertisement.title} creada`,
@@ -165,7 +180,10 @@ export class AdvertisementsService extends PaginationService {
         where,
         limit,
         offset: skip,
-        orderBy: (advertisements, { desc }) => [desc(advertisements.createdAt)],
+        orderBy: (advertisements, { asc, desc }) => [
+          asc(advertisements.playbackOrder),
+          desc(advertisements.createdAt),
+        ],
       }),
       this.db
         .select({ value: count() })
@@ -188,6 +206,7 @@ export class AdvertisementsService extends PaginationService {
     id: string,
     dto: UpdateAdvertisementDto,
     auditContext?: AuditContext,
+    file?: Express.Multer.File,
   ): Promise<AdvertisementResponse> {
     const current = await this.validateAdvertisementId(id);
 
@@ -206,6 +225,16 @@ export class AdvertisementsService extends PaginationService {
       dto.textContent === undefined
         ? undefined
         : this.normalizeTextContent(dto.textContent);
+    const playbackOrder =
+      dto.playbackOrder === undefined
+        ? current.playbackOrder
+        : this.normalizePlaybackOrder(dto.playbackOrder);
+    const videoVolume =
+      dto.videoVolume === undefined
+        ? current.videoVolume
+        : this.normalizeVideoVolume(dto.videoVolume);
+    const videoMuted =
+      dto.videoMuted === undefined ? current.videoMuted : dto.videoMuted;
 
     if (current.mediaType === 'TEXT') {
       const next =
@@ -225,15 +254,53 @@ export class AdvertisementsService extends PaginationService {
       );
     }
 
+    let nextFilePath = current.filePath;
+    let nextMimeType = current.mimeType;
+    let nextFileSize = current.fileSize;
+
+    if (current.mediaType === 'TEXT') {
+      if (file) {
+        await this.safeDeletePhysicalFile(this.toUploadRelativePath(file.filename));
+        throw new BadRequestException(
+          'No se permite adjuntar archivo cuando mediaType es TEXT',
+        );
+      }
+    } else if (file) {
+      const inferredMediaType = this.resolveMediaTypeFromMime(file.mimetype);
+      if (!inferredMediaType) {
+        await this.safeDeletePhysicalFile(this.toUploadRelativePath(file.filename));
+        throw new BadRequestException('Tipo de archivo no permitido');
+      }
+
+      if (inferredMediaType !== current.mediaType) {
+        await this.safeDeletePhysicalFile(this.toUploadRelativePath(file.filename));
+        throw new BadRequestException(
+          `El archivo no coincide con mediaType=${current.mediaType}`,
+        );
+      }
+
+      nextFilePath = this.toUploadRelativePath(file.filename);
+      nextMimeType = file.mimetype;
+      nextFileSize = file.size;
+    }
+
     const values = {
       ...(dto.title !== undefined && { title: dto.title.trim() }),
       ...(normalizedTextContent !== undefined && {
         textContent: normalizedTextContent,
       }),
       ...(dto.displayMode !== undefined && { displayMode: dto.displayMode }),
+      playbackOrder,
+      videoVolume,
+      videoMuted,
       ...(dto.isActive !== undefined && { isActive: dto.isActive }),
       ...(dto.startsAt !== undefined && { startsAt: dto.startsAt ?? null }),
       ...(dto.endsAt !== undefined && { endsAt: dto.endsAt ?? null }),
+      ...(file && {
+        filePath: nextFilePath,
+        mimeType: nextMimeType,
+        fileSize: nextFileSize,
+      }),
       updatedAt: sql`now()`,
     };
 
@@ -244,6 +311,10 @@ export class AdvertisementsService extends PaginationService {
       .set(values)
       .where(eq(schema.advertisements.id, id))
       .returning();
+
+    if (file && current.filePath && current.filePath !== nextFilePath) {
+      await this.safeDeletePhysicalFile(current.filePath);
+    }
 
     const oldValues: Record<string, unknown> = {};
     const newValues: Record<string, unknown> = {};
@@ -261,6 +332,21 @@ export class AdvertisementsService extends PaginationService {
     if (current.displayMode !== updated.displayMode) {
       oldValues.displayMode = current.displayMode;
       newValues.displayMode = updated.displayMode;
+    }
+
+    if (current.playbackOrder !== updated.playbackOrder) {
+      oldValues.playbackOrder = current.playbackOrder;
+      newValues.playbackOrder = updated.playbackOrder;
+    }
+
+    if (current.videoVolume !== updated.videoVolume) {
+      oldValues.videoVolume = current.videoVolume;
+      newValues.videoVolume = updated.videoVolume;
+    }
+
+    if (current.videoMuted !== updated.videoMuted) {
+      oldValues.videoMuted = current.videoMuted;
+      newValues.videoMuted = updated.videoMuted;
     }
 
     if (current.isActive !== updated.isActive) {
@@ -340,7 +426,10 @@ export class AdvertisementsService extends PaginationService {
 
     const rows = await this.db.query.advertisements.findMany({
       where,
-      orderBy: [desc(schema.advertisements.createdAt)],
+      orderBy: [
+        asc(schema.advertisements.playbackOrder),
+        desc(schema.advertisements.createdAt),
+      ],
     });
 
     return rows.map((row) => this.toResponse(row, now));
@@ -419,6 +508,38 @@ export class AdvertisementsService extends PaginationService {
     if (!value) return null;
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private normalizePlaybackOrder(value?: number): number {
+    if (value === undefined) {
+      return ADVERTISEMENT_DEFAULT_PLAYBACK_ORDER;
+    }
+
+    if (!Number.isInteger(value) || value < ADVERTISEMENT_MIN_PLAYBACK_ORDER) {
+      throw new BadRequestException(
+        `playbackOrder debe ser un entero mayor o igual a ${ADVERTISEMENT_MIN_PLAYBACK_ORDER}`,
+      );
+    }
+
+    return value;
+  }
+
+  private normalizeVideoVolume(value?: number): number {
+    if (value === undefined) {
+      return ADVERTISEMENT_DEFAULT_VIDEO_VOLUME;
+    }
+
+    if (
+      !Number.isInteger(value) ||
+      value < ADVERTISEMENT_MIN_VIDEO_VOLUME ||
+      value > ADVERTISEMENT_MAX_VIDEO_VOLUME
+    ) {
+      throw new BadRequestException(
+        `videoVolume debe estar entre ${ADVERTISEMENT_MIN_VIDEO_VOLUME} y ${ADVERTISEMENT_MAX_VIDEO_VOLUME}`,
+      );
+    }
+
+    return value;
   }
 
   private resolveMediaTypeFromMime(
@@ -511,6 +632,9 @@ export class AdvertisementsService extends PaginationService {
       mimeType: row.mimeType,
       fileSize: row.fileSize,
       textContent: row.textContent,
+      playbackOrder: row.playbackOrder,
+      videoVolume: row.videoVolume,
+      videoMuted: row.videoMuted,
       isActive: row.isActive,
       isVisibleNow: this.isVisibleNow(row, now),
       startsAt: row.startsAt,

@@ -39,6 +39,9 @@ export const advertisements = pgTable(
     fileSize: integer('file_size'),
 
     textContent: varchar('text_content', { length: 500 }),
+    playbackOrder: integer('playback_order').default(0).notNull(),
+    videoVolume: integer('video_volume').default(50).notNull(),
+    videoMuted: boolean('video_muted').default(false).notNull(),
 
     isActive: boolean('is_active').default(true).notNull(),
     startsAt: timestamp('starts_at', { withTimezone: true }),
@@ -58,5 +61,6 @@ export const advertisements = pgTable(
       t.endsAt,
     ),
     index('advertisements_display_mode_idx').on(t.displayMode),
+    index('advertisements_playback_order_idx').on(t.displayMode, t.playbackOrder),
   ],
 );
