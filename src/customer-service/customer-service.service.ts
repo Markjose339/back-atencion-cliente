@@ -121,17 +121,14 @@ export class CustomerServiceService extends PaginationService {
     return bws.id;
   }
 
-  private async getLatestCalledTicketByScope(
+  private async getLatestCalledTicketByUser(
     userId: string,
-    branchId: string,
-    serviceId: string,
   ): Promise<CustomerServiceCalledTicket | null> {
     const calledTicket = await this.db.query.tickets.findFirst({
       where: and(
         eq(schema.tickets.userId, userId),
-        eq(schema.tickets.branchId, branchId),
-        eq(schema.tickets.serviceId, serviceId),
         eq(schema.tickets.status, 'LLAMADO' as TicketStatus),
+        isNull(schema.tickets.attentionFinishedAt),
       ),
       columns: {
         id: true,
@@ -345,7 +342,7 @@ export class CustomerServiceService extends PaginationService {
         ),
         columns: { id: true },
       }),
-      this.getLatestCalledTicketByScope(userId, branchId, serviceId),
+      this.getLatestCalledTicketByUser(userId),
       this.getHeldTicketsByUserBranch(userId, branchId),
     ]);
 
